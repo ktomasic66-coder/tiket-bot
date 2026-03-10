@@ -569,6 +569,7 @@ app.post('/dashboard/logging', (req, res) => {
 app.post('/dashboard/embeds', async (req, res) => {
   const {
     embedChannelId,
+    normalMessage,
     title,
     description,
     color,
@@ -578,6 +579,8 @@ app.post('/dashboard/embeds', async (req, res) => {
     imageUrl,
     authorName,
     authorIcon,
+    launcherButtonLabel,
+    launcherButtonUrl,
     timestamp,
   } = req.body;
 
@@ -611,11 +614,30 @@ app.post('/dashboard/embeds', async (req, res) => {
       embed.setTimestamp(new Date());
     }
 
-    await ch.send({ embeds: [embed] });
+    const components = [];
+    const trimmedLauncherUrl = launcherButtonUrl?.trim();
+
+    if (trimmedLauncherUrl) {
+      components.push(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel(launcherButtonLabel?.trim() || 'Skini launcher')
+            .setStyle(ButtonStyle.Link)
+            .setURL(trimmedLauncherUrl)
+        )
+      );
+    }
+
+    await ch.send({
+      content: normalMessage?.trim() || undefined,
+      embeds: [embed],
+      components,
+    });
 
     const data = loadDb();
     data.embeds.push({
       channelId: embedChannelId,
+      normalMessage,
       title,
       description,
       color,
@@ -625,6 +647,8 @@ app.post('/dashboard/embeds', async (req, res) => {
       imageUrl,
       authorName,
       authorIcon,
+      launcherButtonLabel,
+      launcherButtonUrl: trimmedLauncherUrl || '',
       timestamp: timestamp === 'on',
       sentAt: new Date().toISOString(),
     });
