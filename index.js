@@ -1534,14 +1534,6 @@ function chunkText(text, size = 1024) {
   return chunks;
 }
 
-function buildTicketQuestionList(typeCfg) {
-  const questions = Array.isArray(typeCfg?.questions)
-    ? typeCfg.questions.map((question) => String(question || '').trim()).filter(Boolean)
-    : [];
-
-  return questions.map((question, index) => `${index + 1}. ${question}`).join('\n');
-}
-
 function buildTicketCategoryRow() {
   const menu = new StringSelectMenuBuilder()
     .setCustomId('ticket_category')
@@ -1571,7 +1563,9 @@ function buildTicketCategoryRow() {
 }
 
 function buildTicketQuestionModal(type, typeCfg) {
-  const questionList = buildTicketQuestionList(typeCfg);
+  const questions = Array.isArray(typeCfg?.questions)
+    ? typeCfg.questions.map((question) => String(question || '').trim()).filter(Boolean).slice(0, 4)
+    : [];
   const modal = new ModalBuilder()
     .setCustomId(`ticket_answers:${type}`)
     .setTitle(typeCfg?.title || 'Ticket');
@@ -1587,17 +1581,19 @@ function buildTicketQuestionModal(type, typeCfg) {
       .setMaxLength(3)
   );
 
-  const answersRow = new ActionRowBuilder().addComponents(
-    new TextInputBuilder()
-      .setCustomId('answers_blob')
-      .setLabel('Odgovori redom na pitanja')
-      .setPlaceholder(questionList.slice(0, 100) || 'Upisi odgovore redom 1, 2, 3...')
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true)
-      .setMaxLength(4000)
+  const questionRows = questions.map((question, index) =>
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId(`question_${index}`)
+        .setLabel(question.slice(0, 45))
+        .setPlaceholder(question.slice(0, 100))
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(1000)
+    )
   );
 
-  modal.addComponents(ageRow, answersRow);
+  modal.addComponents(ageRow, ...questionRows);
   return modal;
 }
 
@@ -2930,8 +2926,16 @@ if (!task.cropName) {
       }
 
       const ageRaw = interaction.fields.getTextInputValue('age').trim();
-      const answersBlob = interaction.fields.getTextInputValue('answers_blob').trim();
       const age = Number.parseInt(ageRaw, 10);
+      const questionAnswers = (Array.isArray(state.questions) ? state.questions : [])
+        .slice(0, 4)
+        .map((question, index) => ({
+          question,
+          answer: interaction.fields.getTextInputValue(`question_${index}`).trim(),
+        }));
+      const answersBlob = questionAnswers
+        .map((entry, index) => `${index + 1}. ${entry.question}\n${entry.answer}`)
+        .join('\n\n');
 
       if (!Number.isInteger(age) || age <= 0) {
         return interaction.reply({
@@ -2974,10 +2978,7 @@ if (!task.cropName) {
             question: 'Koliko imaš godina?',
             answer: String(age),
           },
-          {
-            question: 'Odgovori korisnika',
-            answer: answersBlob,
-          },
+          ...questionAnswers,
         ],
       });
 
