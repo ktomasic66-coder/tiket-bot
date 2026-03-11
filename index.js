@@ -5,6 +5,12 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const session = require('express-session');
+let mysql = null;
+try {
+  mysql = require('mysql2/promise');
+} catch {
+  mysql = null;
+}
 
 const {
   Client,
@@ -38,6 +44,8 @@ const dbDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir);
 
 const dbFile = path.join(dbDir, 'db.json');
+let dbPool = null;
+let useMySql = false;
 
 
 // default postavke za ticket sistem (za dashboard)
@@ -114,20 +122,150 @@ function getDefaultData() {
   };
 }
 
-function loadDb() {
+function mergeDbData(raw) {
+  const base = getDefaultData();
+  const data = raw && typeof raw === 'object' ? raw : {};
+
+  return {
+    ...base,
+    ...data,
+    welcome: {
+      ...base.welcome,
+      ...(data.welcome || {}),
+    },
+    logging: {
+      ...base.logging,
+      ...(data.logging || {}),
+    },
+    embeds: Array.isArray(data.embeds) ? data.embeds : base.embeds,
+    ticketSystem: {
+      ...base.ticketSystem,
+      ...(data.ticketSystem || {}),
+      types: {
+        igranje: {
+          ...base.ticketSystem.types.igranje,
+          ...(data.ticketSystem?.types?.igranje || {}),
+        },
+        zalba: {
+          ...base.ticketSystem.types.zalba,
+          ...(data.ticketSystem?.types?.zalba || {}),
+        },
+        modovi: {
+          ...base.ticketSystem.types.modovi,
+          ...(data.ticketSystem?.types?.modovi || {}),
+        },
+      },
+      messages: {
+        ...base.ticketSystem.messages,
+        ...(data.ticketSystem?.messages || {}),
+      },
+    },
+    farmingTasks: Array.isArray(data.farmingTasks) ? data.farmingTasks : base.farmingTasks,
+    farmingFields: Array.isArray(data.farmingFields) ? data.farmingFields : base.farmingFields,
+    sowingSeasons: Array.isArray(data.sowingSeasons) ? data.sowingSeasons : base.sowingSeasons,
+  };
+}
+
+function readLocalDb() {
   try {
     const raw = fs.readFileSync(dbFile, 'utf8');
-    const parsed = JSON.parse(raw);
-    return { ...getDefaultData(), ...parsed };
+    return mergeDbData(JSON.parse(raw));
   } catch {
-    const def = getDefaultData();
-    saveDb(def);
+    const def = mergeDbData(getDefaultData());
+    fs.writeFileSync(dbFile, JSON.stringify(def, null, 2));
     return def;
   }
 }
 
+let dbCache = readLocalDb();
+
+async function persistDbCache() {
+  if (!useMySql || !dbPool) return;
+
+  await dbPool.query(
+    `INSERT INTO bot_config (config_key, config_value)
+     VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+    ['ticket-bot', JSON.stringify(dbCache, null, 2)]
+  );
+}
+
+async function initMySql() {
+  if (!mysql) {
+    console.log('mysql2 nije dostupan, bot ostaje na lokalnom JSON storageu.');
+    return;
+  }
+
+  const mysqlUrl =
+    process.env.MYSQL_URL ||
+    process.env.MYSQL_PRIVATE_URL ||
+    process.env.MYSQL_PUBLIC_URL ||
+    '';
+  const mysqlHost = process.env.MYSQLHOST || '';
+  const mysqlPort = Number(process.env.MYSQLPORT || 3306);
+  const mysqlUser = process.env.MYSQLUSER || '';
+  const mysqlPassword = process.env.MYSQLPASSWORD || '';
+  const mysqlDatabase = process.env.MYSQLDATABASE || '';
+
+  if (!mysqlUrl && !mysqlHost) {
+    console.log('MYSQL nije postavljen, bot ostaje na lokalnom JSON storageu.');
+    return;
+  }
+
+  try {
+    dbPool = mysqlUrl
+      ? mysql.createPool(mysqlUrl)
+      : mysql.createPool({
+          host: mysqlHost,
+          port: mysqlPort,
+          user: mysqlUser,
+          password: mysqlPassword,
+          database: mysqlDatabase,
+          connectionLimit: 8,
+          waitForConnections: true,
+          queueLimit: 0,
+        });
+
+    await dbPool.query('SELECT 1');
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS bot_config (
+        config_key VARCHAR(80) PRIMARY KEY,
+        config_value LONGTEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    const [rows] = await dbPool.query(
+      'SELECT config_value FROM bot_config WHERE config_key = ? LIMIT 1',
+      ['ticket-bot']
+    );
+
+    if (rows.length) {
+      dbCache = mergeDbData(JSON.parse(rows[0].config_value));
+    } else {
+      dbCache = readLocalDb();
+      await persistDbCache();
+    }
+
+    useMySql = true;
+    console.log('Bot koristi zajednički MySQL storage.');
+  } catch (err) {
+    console.log('Bot MySQL init error, ostajem na JSON storageu:', err.message);
+    useMySql = false;
+    dbPool = null;
+  }
+}
+
+function loadDb() {
+  return JSON.parse(JSON.stringify(dbCache));
+}
+
 function saveDb(data) {
-  fs.writeFileSync(dbFile, JSON.stringify(data, null, 2));
+  dbCache = mergeDbData(data);
+  fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
+  persistDbCache().catch((err) => {
+    console.log('BOT CONFIG SAVE ERROR:', err.message);
+  });
 }
 
 // helper: vraća ticket config = default + ono što je u db.json
@@ -1167,8 +1305,10 @@ try {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`🌐 Dashboard listening on port ${PORT}`);
+initMySql().finally(() => {
+  app.listen(PORT, () => {
+    console.log(`🌐 Dashboard listening on port ${PORT}`);
+  });
 });
 
 // =====================
