@@ -247,6 +247,35 @@ async function initMySql() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS ticket_records (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        guild_id VARCHAR(40) NOT NULL,
+        user_id VARCHAR(40) NOT NULL,
+        username VARCHAR(120) NOT NULL,
+        ticket_type VARCHAR(80) NOT NULL,
+        ticket_title VARCHAR(120) NOT NULL,
+        status VARCHAR(40) NOT NULL,
+        age INT NULL,
+        is_adult TINYINT(1) NOT NULL DEFAULT 0,
+        channel_id VARCHAR(40) NOT NULL,
+        channel_name VARCHAR(120) NOT NULL,
+        claimed_by_id VARCHAR(40) NULL,
+        claimed_by_tag VARCHAR(120) NULL,
+        closed_by_id VARCHAR(40) NULL,
+        closed_by_tag VARCHAR(120) NULL,
+        close_reason VARCHAR(80) NULL,
+        questions_json LONGTEXT NOT NULL,
+        answers_json LONGTEXT NOT NULL,
+        answers_text LONGTEXT NOT NULL,
+        transcript_text LONGTEXT NULL,
+        opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        claimed_at TIMESTAMP NULL DEFAULT NULL,
+        closed_at TIMESTAMP NULL DEFAULT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_ticket_channel (channel_id)
+      )
+    `);
 
     const [rows] = await dbPool.query(
       'SELECT config_value FROM bot_config WHERE config_key = ? LIMIT 1',
@@ -1504,7 +1533,24 @@ function startTicketInactivity(channel) {
         .catch(() => {});
 
       // pošalji transkript (bot kao "zatvorio")
-      await sendTicketTranscript(ch, ch.client.user);
+      const transcriptText = await sendTicketTranscript(ch, ch.client.user);
+
+      await upsertTicketRecord({
+        guildId: guild.id,
+        userId: ticketOwnerId || '',
+        username: '',
+        ticketType: (topic.match(/Type:\s*([^\s|]+)/i) || [])[1] || '',
+        ticketTitle: ch.name,
+        status: 'auto_closed',
+        channelId: ch.id,
+        channelName: ch.name,
+        closedById: ch.client.user.id,
+        closedByTag: ch.client.user.tag,
+        closeReason: 'auto_close',
+        transcriptText,
+      }).catch((err) => {
+        console.log('TICKET RECORD AUTO CLOSE ERROR:', err.message);
+      });
 
       // ugasi i reminder ako postoji
       stopTicketReminder(ch.id);
@@ -1630,7 +1676,99 @@ async function saveTicketSubmission({
   );
 }
 
-async function openTicketChannelFromModalAnswers({ guild, member, type, cfg, typeCfg, answers }) {
+async function upsertTicketRecord({
+  guildId,
+  userId,
+  username,
+  ticketType,
+  ticketTitle,
+  status,
+  age = null,
+  isAdult = null,
+  channelId,
+  channelName,
+  claimedById = null,
+  claimedByTag = null,
+  closedById = null,
+  closedByTag = null,
+  closeReason = null,
+  questions = null,
+  answers = null,
+  answersText = null,
+  transcriptText = null,
+}) {
+  if (!useMySql || !dbPool || !channelId) return;
+
+  await dbPool.query(
+    `INSERT INTO ticket_records
+      (guild_id, user_id, username, ticket_type, ticket_title, status, age, is_adult, channel_id, channel_name,
+       claimed_by_id, claimed_by_tag, closed_by_id, closed_by_tag, close_reason, questions_json, answers_json, answers_text, transcript_text)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       guild_id = COALESCE(NULLIF(VALUES(guild_id), ''), guild_id),
+       user_id = COALESCE(NULLIF(VALUES(user_id), ''), user_id),
+       username = COALESCE(NULLIF(VALUES(username), ''), username),
+       ticket_type = COALESCE(NULLIF(VALUES(ticket_type), ''), ticket_type),
+       ticket_title = COALESCE(NULLIF(VALUES(ticket_title), ''), ticket_title),
+       status = VALUES(status),
+       age = COALESCE(VALUES(age), age),
+       is_adult = CASE
+         WHEN VALUES(age) IS NOT NULL THEN VALUES(is_adult)
+         ELSE is_adult
+       END,
+       channel_name = VALUES(channel_name),
+       claimed_by_id = COALESCE(VALUES(claimed_by_id), claimed_by_id),
+       claimed_by_tag = COALESCE(VALUES(claimed_by_tag), claimed_by_tag),
+       closed_by_id = COALESCE(VALUES(closed_by_id), closed_by_id),
+       closed_by_tag = COALESCE(VALUES(closed_by_tag), closed_by_tag),
+       close_reason = COALESCE(VALUES(close_reason), close_reason),
+       questions_json = COALESCE(NULLIF(VALUES(questions_json), 'null'), questions_json),
+       answers_json = COALESCE(NULLIF(VALUES(answers_json), 'null'), answers_json),
+       answers_text = COALESCE(NULLIF(VALUES(answers_text), ''), answers_text),
+       transcript_text = COALESCE(VALUES(transcript_text), transcript_text),
+       claimed_at = CASE
+         WHEN VALUES(claimed_by_id) IS NOT NULL AND claimed_at IS NULL THEN CURRENT_TIMESTAMP
+         ELSE claimed_at
+       END,
+       closed_at = CASE
+         WHEN VALUES(closed_by_id) IS NOT NULL OR VALUES(close_reason) IS NOT NULL THEN CURRENT_TIMESTAMP
+         ELSE closed_at
+       END`,
+    [
+      guildId || '',
+      userId || '',
+      username || '',
+      ticketType || '',
+      ticketTitle || '',
+      status || 'opened',
+      Number.isFinite(age) ? age : null,
+      isAdult ? 1 : 0,
+      channelId,
+      channelName || '',
+      claimedById,
+      claimedByTag,
+      closedById,
+      closedByTag,
+      closeReason,
+      questions == null ? 'null' : JSON.stringify(Array.isArray(questions) ? questions : []),
+      answers == null ? 'null' : JSON.stringify(Array.isArray(answers) ? answers : []),
+      answersText == null ? '' : String(answersText),
+      transcriptText,
+    ]
+  );
+}
+
+async function openTicketChannelFromModalAnswers({
+  guild,
+  member,
+  type,
+  cfg,
+  typeCfg,
+  answers,
+  age = null,
+  questions = [],
+  answersText = '',
+}) {
   const channelName = `ticket-${type}-${member.user.username}`.toLowerCase();
 
   const channel = await guild.channels.create({
@@ -1731,22 +1869,31 @@ async function openTicketChannelFromModalAnswers({ guild, member, type, cfg, typ
     components: [buttons],
   });
 
+  await upsertTicketRecord({
+    guildId: guild.id,
+    userId: member.id,
+    username: member.user.tag,
+    ticketType: type,
+    ticketTitle: typeCfg?.title || type,
+    status: 'opened',
+    age,
+    isAdult: Number.isFinite(age) ? age >= 18 : false,
+    channelId: channel.id,
+    channelName: channel.name,
+    questions,
+    answers,
+    answersText,
+  }).catch((err) => {
+    console.log('TICKET RECORD SAVE ERROR:', err.message);
+  });
+
   startTicketInactivity(channel);
   return channel;
 }
 
 // === helper za transkript tiketa ===
 async function sendTicketTranscript(channel, closedByUser) {
-  const cfg = getTicketConfig();
-  const logId = cfg.logChannelId;
-  if (!logId) return;
-
   try {
-    const logChannel = await channel.client.channels
-      .fetch(logId)
-      .catch(() => null);
-    if (!logChannel) return;
-
     let allMessages = [];
     let lastId;
 
@@ -1777,13 +1924,26 @@ async function sendTicketTranscript(channel, closedByUser) {
       lines.join('\n') || 'Nema poruka u ovom tiketu.';
 
     const buffer = Buffer.from(transcriptText, 'utf-8');
+    const cfg = getTicketConfig();
+    const logId = cfg.logChannelId;
 
-    await logChannel.send({
-      content: `📝 Transkript zatvorenog tiketa: ${channel.name}\nZatvorio: ${closedByUser.tag}`,
-      files: [{ attachment: buffer, name: `transkript-${channel.id}.txt` }],
-    });
+    if (logId) {
+      const logChannel = await channel.client.channels
+        .fetch(logId)
+        .catch(() => null);
+
+      if (logChannel) {
+        await logChannel.send({
+          content: `Transkript zatvorenog tiketa: ${channel.name}\nZatvorio: ${closedByUser.tag}`,
+          files: [{ attachment: buffer, name: `transkript-${channel.id}.txt` }],
+        });
+      }
+    }
+
+    return transcriptText;
   } catch (err) {
-    console.error('Greška pri slanju transkripta:', err);
+    console.error('Greska pri slanju transkripta:', err);
+    return null;
   }
 }
 
@@ -2857,6 +3017,21 @@ if (!task.cropName) {
       const ticketOwnerId = match ? match[1] : null;
 
       if (interaction.customId === 'ticket_claim') {
+        await upsertTicketRecord({
+          guildId: guild.id,
+          userId: ticketOwnerId || '',
+          username: '',
+          ticketType: (topic.match(/Type:\s*([^\s|]+)/i) || [])[1] || '',
+          ticketTitle: channel.name,
+          status: 'claimed',
+          channelId: channel.id,
+          channelName: channel.name,
+          claimedById: interaction.user.id,
+          claimedByTag: interaction.user.tag,
+        }).catch((err) => {
+          console.log('TICKET RECORD CLAIM ERROR:', err.message);
+        });
+
         await interaction.reply({
           content: `✅ Ticket je preuzeo/la ${interaction.user}.`,
         });
@@ -2899,7 +3074,24 @@ if (!task.cropName) {
           ReadMessageHistory: true,
         }).catch(() => {});
 
-        await sendTicketTranscript(channel, interaction.user);
+        const transcriptText = await sendTicketTranscript(channel, interaction.user);
+
+        await upsertTicketRecord({
+          guildId: guild.id,
+          userId: ticketOwnerId || '',
+          username: '',
+          ticketType: (topic.match(/Type:\s*([^\s|]+)/i) || [])[1] || '',
+          ticketTitle: channel.name,
+          status: 'closed',
+          channelId: channel.id,
+          channelName: channel.name,
+          closedById: interaction.user.id,
+          closedByTag: interaction.user.tag,
+          closeReason: 'manual_close',
+          transcriptText,
+        }).catch((err) => {
+          console.log('TICKET RECORD CLOSE ERROR:', err.message);
+        });
 
         setTimeout(() => {
           channel.delete().catch(() => {});
@@ -2973,6 +3165,12 @@ if (!task.cropName) {
         type,
         cfg,
         typeCfg,
+        age,
+        questions: state.questions,
+        answersText: [
+          `Koliko imas godina?\n${age}`,
+          ...questionAnswers.map((entry, index) => `${index + 1}. ${entry.question}\n${entry.answer}`),
+        ].join('\n\n'),
         answers: [
           {
             question: 'Koliko imaš godina?',
