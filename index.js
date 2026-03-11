@@ -1541,7 +1541,7 @@ function buildTicketCategoryRow() {
     .addOptions(
       {
         label: 'Igranje na serveru',
-        description: 'Jedan modal, 18+ provjera i kratak upitnik za prijavu.',
+        description: 'Godine + svako pitanje zasebno u istom modalu.',
         value: 'igranje',
         emoji: '🎮',
       },
@@ -1862,7 +1862,7 @@ client.on('interactionCreate', async (interaction) => {
             '4. Budite strpljivi – netko iz tima će vam se javiti čim bude moguće.\n\n' +
             '**Napomena:**\n' +
             '• Ticket prijava traži i pitanje o godinama. Minimalna dob je 18 godina.\n' +
-            '• Za igranje na serveru modal sadrži godine + 4 ključna pitanja za prijavu.\n\n' +
+            '• Pitanja su složena jedno ispod drugog i svako ima zaseban odgovor u modalu.\n\n' +
             '**Pravila tiketa:**\n' +
             '• Svi problemi moraju biti jasno i detaljno opisani, bez poruka tipa "ne radi".\n' +
             '• Poštujte članove staff tima.\n' +
