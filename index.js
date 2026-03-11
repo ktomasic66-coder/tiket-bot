@@ -1332,6 +1332,7 @@ const FS_TELEMETRY_CHANNEL_ID = process.env.FS_TELEMETRY_CHANNEL_ID || '';
 
 // mapa za FARMING zadatke (po korisniku)
 const activeTasks = new Map(); // key: userId, value: { field: string | null }
+const pendingTicketForms = new Map(); // key: userId, value: { type, questions, answers }
 
 // === mapa za ticket REMINDER-e (kanal -> intervalId) ===
 const ticketReminders = new Map();
@@ -1509,6 +1510,145 @@ function startTicketInactivity(channel) {
   ticketInactivity.set(channel.id, timeoutId);
 }
 
+function chunkArray(items, size) {
+  const result = [];
+  for (let i = 0; i < items.length; i += size) {
+    result.push(items.slice(i, i + size));
+  }
+  return result;
+}
+
+function buildTicketQuestionSteps(typeCfg) {
+  const questions = Array.isArray(typeCfg?.questions)
+    ? typeCfg.questions.map((question) => String(question || '').trim()).filter(Boolean)
+    : [];
+
+  return chunkArray(
+    questions.map((question, index) => ({
+      key: `answer_${index}`,
+      question,
+      index,
+    })),
+    5
+  );
+}
+
+function buildTicketQuestionModal(type, typeCfg, stepIndex) {
+  const steps = buildTicketQuestionSteps(typeCfg);
+  const currentStep = steps[stepIndex] || [];
+
+  const modal = new ModalBuilder()
+    .setCustomId(`ticket_answers:${type}:${stepIndex}`)
+    .setTitle(`${typeCfg?.title || 'Ticket'} ${stepIndex + 1}/${steps.length}`);
+
+  const rows = currentStep.map((entry) =>
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId(entry.key)
+        .setLabel(entry.question.slice(0, 45))
+        .setPlaceholder(entry.question.slice(0, 100))
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(1000)
+    )
+  );
+
+  modal.addComponents(...rows);
+  return modal;
+}
+
+async function openTicketChannelFromModalAnswers({ guild, member, type, cfg, typeCfg, answers }) {
+  const channelName = `ticket-${type}-${member.user.username}`.toLowerCase();
+
+  const channel = await guild.channels.create({
+    name: channelName,
+    type: ChannelType.GuildText,
+    parent: cfg.categoryId || TICKET_CATEGORY_ID,
+    topic: `Ticket owner: ${member.id} | Type: ${type}`,
+    permissionOverwrites: [
+      {
+        id: guild.roles.everyone,
+        deny: [PermissionFlagsBits.ViewChannel],
+      },
+      {
+        id: cfg.supportRoleId || SUPPORT_ROLE_ID,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+        ],
+      },
+      {
+        id: member.id,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+        ],
+      },
+      {
+        id: client.user.id,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+        ],
+      },
+    ],
+  });
+
+  const introEmbed = new EmbedBuilder()
+    .setColor('#ffd000')
+    .setTitle(typeCfg?.title || 'Ticket')
+    .setDescription(
+      [
+        `Otvorio: <@${member.id}>`,
+        `Tip: **${typeCfg?.title || type}**`,
+        '',
+        'Korisnik je popunio upitnik preko modala. Odgovori su ispod.',
+      ].join('\n')
+    )
+    .setTimestamp();
+
+  const answerFields = Array.isArray(answers)
+    ? answers
+        .map((entry, index) => ({
+          name: `${index + 1}. ${entry.question}`.slice(0, 256),
+          value: String(entry.answer || '-').slice(0, 1024) || '-',
+        }))
+        .slice(0, 25)
+    : [];
+
+  if (answerFields.length) {
+    introEmbed.addFields(answerFields);
+  } else {
+    introEmbed.addFields({
+      name: 'Opis',
+      value: 'Ticket je otvoren bez dodatnih pitanja iz modala.',
+    });
+  }
+
+  const buttons = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_claim')
+      .setLabel('Preuzmi tiket')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('ticket_close')
+      .setLabel('Zatvori tiket')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  await channel.send({
+    content: `<@${member.id}>`,
+    embeds: [introEmbed],
+    components: [buttons],
+  });
+
+  startTicketInactivity(channel);
+  return channel;
+}
+
 // === helper za transkript tiketa ===
 async function sendTicketTranscript(channel, closedByUser) {
   const cfg = getTicketConfig();
@@ -1632,7 +1772,7 @@ client.on('interactionCreate', async (interaction) => {
             '**Prije otvaranja tiketa**\n' +
             '1. Provjerite jeste li sve instalirali i podesili prema uputama.\n' +
             '2. Pokušajte sami riješiti problem i provjerite da nije do vaših modova ili klijenta.\n' +
-            '3. Ako ne uspijete, otvorite tiket i detaljno opišite svoj problem.\n' +
+            '3. Ako ne uspijete, otvorite tiket i ispunite kratki modal upitnik.\n' +
             '4. Budite strpljivi – netko iz tima će vam se javiti čim bude moguće.\n\n' +
             '**Pravila tiketa:**\n' +
             '• Svi problemi moraju biti jasno i detaljno opisani, bez poruka tipa "ne radi".\n' +
@@ -1650,7 +1790,7 @@ client.on('interactionCreate', async (interaction) => {
           {
             label: 'Igranje na serveru',
             description:
-              'Ako želiš igrati s nama samo otvori ticket i odgovori na pitanja.',
+              'Otvara ticket i pitanja prikazuje kroz moderan modal prozor.',
             value: 'igranje',
             emoji: '🎮',
           },
@@ -1891,6 +2031,42 @@ if (interaction.commandName === 'update-field') {
     const cfg = getTicketConfig();
     const typeCfg = cfg.types[type];
 
+    if (!typeCfg) {
+      return interaction.reply({
+        content: '⚠️ Odabrani ticket tip nije pronađen. Pokušaj ponovno.',
+        ephemeral: true,
+      });
+    }
+
+    const steps = buildTicketQuestionSteps(typeCfg);
+
+    pendingTicketForms.set(interaction.user.id, {
+      type,
+      questions: Array.isArray(typeCfg.questions) ? typeCfg.questions : [],
+      answers: [],
+    });
+
+    if (!steps.length) {
+      const channel = await openTicketChannelFromModalAnswers({
+        guild,
+        member,
+        type,
+        cfg,
+        typeCfg,
+        answers: [],
+      });
+
+      pendingTicketForms.delete(interaction.user.id);
+      await interaction.reply({
+        content: `Tvoj ticket je otvoren: ${channel}`,
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.showModal(buildTicketQuestionModal(type, typeCfg, 0));
+    return;
+
     const channelName = `ticket-${type}-${member.user.username}`.toLowerCase();
 
     const channel = await guild.channels.create({
@@ -2044,6 +2220,22 @@ if (interaction.commandName === 'update-field') {
 
   // ---------- BUTTONI (TICKETI + FARMING) ----------
   if (interaction.isButton()) {
+    if (interaction.customId.startsWith('ticket_modal_continue:')) {
+      const [, type, stepRaw] = interaction.customId.split(':');
+      const cfg = getTicketConfig();
+      const typeCfg = cfg.types[type];
+      const stepIndex = Number(stepRaw || 0);
+
+      if (!typeCfg) {
+        return interaction.reply({
+          content: '⚠️ Ticket forma nije pronađena. Pokušaj ponovno.',
+          ephemeral: true,
+        });
+      }
+
+      return interaction.showModal(buildTicketQuestionModal(type, typeCfg, stepIndex));
+    }
+
     // === FARMING: dugme za dodavanje polja (iz field-panel poruke) ===
     if (interaction.customId === 'field_add_button') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
@@ -2671,6 +2863,62 @@ if (!task.cropName) {
 
   // ---------- MODALI (FIELD ADD + SIJANJE + KOMBAJNIRANJE) ----------
   if (interaction.isModalSubmit()) {
+    if (interaction.customId.startsWith('ticket_answers:')) {
+      const [, type, stepRaw] = interaction.customId.split(':');
+      const stepIndex = Number(stepRaw || 0);
+      const cfg = getTicketConfig();
+      const typeCfg = cfg.types[type];
+      const steps = buildTicketQuestionSteps(typeCfg);
+      const state = pendingTicketForms.get(interaction.user.id);
+
+      if (!typeCfg || !state || state.type !== type) {
+        return interaction.reply({
+          content: '⚠️ Ticket forma je istekla. Otvori ticket ponovno iz panela.',
+          ephemeral: true,
+        });
+      }
+
+      const currentStep = steps[stepIndex] || [];
+      for (const entry of currentStep) {
+        state.answers[entry.index] = {
+          question: entry.question,
+          answer: interaction.fields.getTextInputValue(entry.key).trim(),
+        };
+      }
+      pendingTicketForms.set(interaction.user.id, state);
+
+      const nextStep = stepIndex + 1;
+      if (nextStep < steps.length) {
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`ticket_modal_continue:${type}:${nextStep}`)
+            .setLabel(`Nastavi upitnik (${nextStep + 1}/${steps.length})`)
+            .setStyle(ButtonStyle.Primary)
+        );
+
+        return interaction.reply({
+          content: 'Prvi dio upitnika je spremljen. Klikni dugme ispod za nastavak.',
+          components: [row],
+          ephemeral: true,
+        });
+      }
+
+      const channel = await openTicketChannelFromModalAnswers({
+        guild: interaction.guild,
+        member: interaction.member,
+        type,
+        cfg,
+        typeCfg,
+        answers: state.answers.filter(Boolean),
+      });
+
+      pendingTicketForms.delete(interaction.user.id);
+      return interaction.reply({
+        content: `Tvoj ticket je otvoren: ${channel}`,
+        ephemeral: true,
+      });
+    }
+
     // Dodavanje novog polja
     if (interaction.customId === 'field_add_modal') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
