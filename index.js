@@ -234,6 +234,22 @@ async function initMySql() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS ticket_submissions (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        guild_id VARCHAR(40) NOT NULL,
+        user_id VARCHAR(40) NOT NULL,
+        username VARCHAR(120) NOT NULL,
+        ticket_type VARCHAR(80) NOT NULL,
+        status VARCHAR(40) NOT NULL,
+        age INT NULL,
+        is_adult TINYINT(1) NOT NULL DEFAULT 0,
+        channel_id VARCHAR(40) NULL,
+        questions_json LONGTEXT NOT NULL,
+        answers_text LONGTEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
     const [rows] = await dbPool.query(
       'SELECT config_value FROM bot_config WHERE config_key = ? LIMIT 1',
@@ -1510,51 +1526,87 @@ function startTicketInactivity(channel) {
   ticketInactivity.set(channel.id, timeoutId);
 }
 
-function chunkArray(items, size) {
-  const result = [];
-  for (let i = 0; i < items.length; i += size) {
-    result.push(items.slice(i, i + size));
+function chunkText(text, size = 1024) {
+  const value = String(text || '').trim();
+  if (!value) return [];
+
+  const chunks = [];
+  for (let i = 0; i < value.length; i += size) {
+    chunks.push(value.slice(i, i + size));
   }
-  return result;
+  return chunks;
 }
 
-function buildTicketQuestionSteps(typeCfg) {
+function buildTicketQuestionList(typeCfg) {
   const questions = Array.isArray(typeCfg?.questions)
     ? typeCfg.questions.map((question) => String(question || '').trim()).filter(Boolean)
     : [];
 
-  return chunkArray(
-    questions.map((question, index) => ({
-      key: `answer_${index}`,
-      question,
-      index,
-    })),
-    5
-  );
+  return questions.map((question, index) => `${index + 1}. ${question}`).join('\n');
 }
 
-function buildTicketQuestionModal(type, typeCfg, stepIndex) {
-  const steps = buildTicketQuestionSteps(typeCfg);
-  const currentStep = steps[stepIndex] || [];
-
+function buildTicketQuestionModal(type, typeCfg) {
+  const questionList = buildTicketQuestionList(typeCfg);
   const modal = new ModalBuilder()
-    .setCustomId(`ticket_answers:${type}:${stepIndex}`)
-    .setTitle(`${typeCfg?.title || 'Ticket'} ${stepIndex + 1}/${steps.length}`);
+    .setCustomId(`ticket_answers:${type}`)
+    .setTitle(typeCfg?.title || 'Ticket');
 
-  const rows = currentStep.map((entry) =>
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId(entry.key)
-        .setLabel(entry.question.slice(0, 45))
-        .setPlaceholder(entry.question.slice(0, 100))
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true)
-        .setMaxLength(1000)
-    )
+  const ageRow = new ActionRowBuilder().addComponents(
+    new TextInputBuilder()
+      .setCustomId('age')
+      .setLabel('Koliko imas godina?')
+      .setPlaceholder('Upisi broj, npr. 18')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMinLength(1)
+      .setMaxLength(3)
   );
 
-  modal.addComponents(...rows);
+  const answersRow = new ActionRowBuilder().addComponents(
+    new TextInputBuilder()
+      .setCustomId('answers_blob')
+      .setLabel('Odgovori redom na pitanja')
+      .setPlaceholder(questionList.slice(0, 100) || 'Upisi odgovore redom 1, 2, 3...')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(4000)
+  );
+
+  modal.addComponents(ageRow, answersRow);
   return modal;
+}
+
+async function saveTicketSubmission({
+  guildId,
+  userId,
+  username,
+  ticketType,
+  status,
+  age,
+  isAdult,
+  channelId,
+  questions,
+  answersText,
+}) {
+  if (!useMySql || !dbPool) return;
+
+  await dbPool.query(
+    `INSERT INTO ticket_submissions
+      (guild_id, user_id, username, ticket_type, status, age, is_adult, channel_id, questions_json, answers_text)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      guildId || '',
+      userId || '',
+      username || '',
+      ticketType || '',
+      status || 'submitted',
+      Number.isFinite(age) ? age : null,
+      isAdult ? 1 : 0,
+      channelId || null,
+      JSON.stringify(Array.isArray(questions) ? questions : []),
+      String(answersText || ''),
+    ]
+  );
 }
 
 async function openTicketChannelFromModalAnswers({ guild, member, type, cfg, typeCfg, answers }) {
@@ -1610,14 +1662,27 @@ async function openTicketChannelFromModalAnswers({ guild, member, type, cfg, typ
     )
     .setTimestamp();
 
-  const answerFields = Array.isArray(answers)
-    ? answers
-        .map((entry, index) => ({
-          name: `${index + 1}. ${entry.question}`.slice(0, 256),
-          value: String(entry.answer || '-').slice(0, 1024) || '-',
-        }))
-        .slice(0, 25)
-    : [];
+  const answerFields = [];
+  for (const [index, entry] of (Array.isArray(answers) ? answers : []).entries()) {
+    const chunks = chunkText(entry.answer || '-', 1024);
+    if (!chunks.length) {
+      answerFields.push({
+        name: `${index + 1}. ${entry.question}`.slice(0, 256),
+        value: '-',
+      });
+      continue;
+    }
+
+    chunks.forEach((chunk, chunkIndex) => {
+      answerFields.push({
+        name:
+          chunkIndex === 0
+            ? `${index + 1}. ${entry.question}`.slice(0, 256)
+            : `Nastavak ${index + 1}`.slice(0, 256),
+        value: chunk,
+      });
+    });
+  }
 
   if (answerFields.length) {
     introEmbed.addFields(answerFields);
@@ -1772,8 +1837,11 @@ client.on('interactionCreate', async (interaction) => {
             '**Prije otvaranja tiketa**\n' +
             '1. Provjerite jeste li sve instalirali i podesili prema uputama.\n' +
             '2. Pokušajte sami riješiti problem i provjerite da nije do vaših modova ili klijenta.\n' +
-            '3. Ako ne uspijete, otvorite tiket i ispunite kratki modal upitnik.\n' +
+            '3. Ako ne uspijete, otvorite tiket i ispunite jedan modal upitnik.\n' +
             '4. Budite strpljivi – netko iz tima će vam se javiti čim bude moguće.\n\n' +
+            '**Napomena:**\n' +
+            '• Ticket prijava traži i pitanje o godinama. Minimalna dob je 18 godina.\n' +
+            '• Ostale odgovore upisujete u jedan veliki scroll unos redom kako su pitanja zadana.\n\n' +
             '**Pravila tiketa:**\n' +
             '• Svi problemi moraju biti jasno i detaljno opisani, bez poruka tipa "ne radi".\n' +
             '• Poštujte članove staff tima.\n' +
@@ -1790,7 +1858,7 @@ client.on('interactionCreate', async (interaction) => {
           {
             label: 'Igranje na serveru',
             description:
-              'Otvara ticket i pitanja prikazuje kroz moderan modal prozor.',
+              'Jedan modal, provjera 18+ i odgovori redom u velikom unosu.',
             value: 'igranje',
             emoji: '🎮',
           },
@@ -2038,33 +2106,12 @@ if (interaction.commandName === 'update-field') {
       });
     }
 
-    const steps = buildTicketQuestionSteps(typeCfg);
-
     pendingTicketForms.set(interaction.user.id, {
       type,
       questions: Array.isArray(typeCfg.questions) ? typeCfg.questions : [],
-      answers: [],
     });
 
-    if (!steps.length) {
-      const channel = await openTicketChannelFromModalAnswers({
-        guild,
-        member,
-        type,
-        cfg,
-        typeCfg,
-        answers: [],
-      });
-
-      pendingTicketForms.delete(interaction.user.id);
-      await interaction.reply({
-        content: `Tvoj ticket je otvoren: ${channel}`,
-        ephemeral: true,
-      });
-      return;
-    }
-
-    await interaction.showModal(buildTicketQuestionModal(type, typeCfg, 0));
+    await interaction.showModal(buildTicketQuestionModal(type, typeCfg));
     return;
 
     const channelName = `ticket-${type}-${member.user.username}`.toLowerCase();
@@ -2864,11 +2911,9 @@ if (!task.cropName) {
   // ---------- MODALI (FIELD ADD + SIJANJE + KOMBAJNIRANJE) ----------
   if (interaction.isModalSubmit()) {
     if (interaction.customId.startsWith('ticket_answers:')) {
-      const [, type, stepRaw] = interaction.customId.split(':');
-      const stepIndex = Number(stepRaw || 0);
+      const [, type] = interaction.customId.split(':');
       const cfg = getTicketConfig();
       const typeCfg = cfg.types[type];
-      const steps = buildTicketQuestionSteps(typeCfg);
       const state = pendingTicketForms.get(interaction.user.id);
 
       if (!typeCfg || !state || state.type !== type) {
@@ -2878,27 +2923,36 @@ if (!task.cropName) {
         });
       }
 
-      const currentStep = steps[stepIndex] || [];
-      for (const entry of currentStep) {
-        state.answers[entry.index] = {
-          question: entry.question,
-          answer: interaction.fields.getTextInputValue(entry.key).trim(),
-        };
-      }
-      pendingTicketForms.set(interaction.user.id, state);
+      const ageRaw = interaction.fields.getTextInputValue('age').trim();
+      const answersBlob = interaction.fields.getTextInputValue('answers_blob').trim();
+      const age = Number.parseInt(ageRaw, 10);
 
-      const nextStep = stepIndex + 1;
-      if (nextStep < steps.length) {
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`ticket_modal_continue:${type}:${nextStep}`)
-            .setLabel(`Nastavi upitnik (${nextStep + 1}/${steps.length})`)
-            .setStyle(ButtonStyle.Primary)
-        );
+      if (!Number.isInteger(age) || age <= 0) {
+        return interaction.reply({
+          content: '⚠️ Polje za godine mora sadržavati ispravan broj.',
+          ephemeral: true,
+        });
+      }
+
+      if (age < 18) {
+        pendingTicketForms.delete(interaction.user.id);
+        await saveTicketSubmission({
+          guildId: interaction.guild?.id,
+          userId: interaction.user.id,
+          username: interaction.user.tag,
+          ticketType: type,
+          status: 'rejected_underage',
+          age,
+          isAdult: false,
+          channelId: null,
+          questions: state.questions,
+          answersText: answersBlob,
+        }).catch((err) => {
+          console.log('TICKET SUBMISSION SAVE ERROR:', err.message);
+        });
 
         return interaction.reply({
-          content: 'Prvi dio upitnika je spremljen. Klikni dugme ispod za nastavak.',
-          components: [row],
+          content: '❌ Tvoja prijava je odbijena radi maloljetnosti. Minimalna dob za ovaj ticket je 18 godina.',
           ephemeral: true,
         });
       }
@@ -2909,10 +2963,34 @@ if (!task.cropName) {
         type,
         cfg,
         typeCfg,
-        answers: state.answers.filter(Boolean),
+        answers: [
+          {
+            question: 'Koliko imaš godina?',
+            answer: String(age),
+          },
+          {
+            question: 'Odgovori korisnika',
+            answer: answersBlob,
+          },
+        ],
       });
 
       pendingTicketForms.delete(interaction.user.id);
+      await saveTicketSubmission({
+        guildId: interaction.guild?.id,
+        userId: interaction.user.id,
+        username: interaction.user.tag,
+        ticketType: type,
+        status: 'opened',
+        age,
+        isAdult: true,
+        channelId: channel.id,
+        questions: state.questions,
+        answersText: answersBlob,
+      }).catch((err) => {
+        console.log('TICKET SUBMISSION SAVE ERROR:', err.message);
+      });
+
       return interaction.reply({
         content: `Tvoj ticket je otvoren: ${channel}`,
         ephemeral: true,
