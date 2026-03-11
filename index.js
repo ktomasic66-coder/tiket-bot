@@ -59,13 +59,10 @@ const DEFAULT_TICKET_SYSTEM = {
     igranje: {
       title: 'Igranje na serveru',
       questions: [
-        'Koliko često planiraš da igraš na serveru?',
-        'U koje vrijeme si najčešće aktivan?',
-        'Da li si spreman da poštuješ raspored i obaveze na farmi?',
-        'Kako bi reagovao ako neko iz tima ne poštuje dogovor ili pravila igre?',
-        'Da li koristiš voice chat (Discord) tokom igre?',
-        'Da li si spreman da pomogneš drugim igračima?',
-        'Zašto želiš da igraš baš na hard serveru?',
+        'Koliko cesto planiras igrati na serveru?',
+        'U koje vrijeme si najcesce aktivan?',
+        'Zasto zelis igrati bas na nasem serveru?',
+        'Jesi li spreman postovati pravila, dogovore i obaveze na farmi?',
       ],
     },
     zalba: {
@@ -1545,6 +1542,34 @@ function buildTicketQuestionList(typeCfg) {
   return questions.map((question, index) => `${index + 1}. ${question}`).join('\n');
 }
 
+function buildTicketCategoryRow() {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('ticket_category')
+    .setPlaceholder('Odaberi vrstu tiketa')
+    .addOptions(
+      {
+        label: 'Igranje na serveru',
+        description: 'Jedan modal, 18+ provjera i kratak upitnik za prijavu.',
+        value: 'igranje',
+        emoji: '🎮',
+      },
+      {
+        label: 'Žalba na igrače',
+        description: 'Prijavi igrača koji krši pravila servera.',
+        value: 'zalba',
+        emoji: '⚠️',
+      },
+      {
+        label: 'Edit modova',
+        description: 'Ako trebaš pomoć ili savjet oko edita modova.',
+        value: 'modovi',
+        emoji: '🧩',
+      }
+    );
+
+  return new ActionRowBuilder().addComponents(menu);
+}
+
 function buildTicketQuestionModal(type, typeCfg) {
   const questionList = buildTicketQuestionList(typeCfg);
   const modal = new ModalBuilder()
@@ -1841,7 +1866,7 @@ client.on('interactionCreate', async (interaction) => {
             '4. Budite strpljivi – netko iz tima će vam se javiti čim bude moguće.\n\n' +
             '**Napomena:**\n' +
             '• Ticket prijava traži i pitanje o godinama. Minimalna dob je 18 godina.\n' +
-            '• Ostale odgovore upisujete u jedan veliki scroll unos redom kako su pitanja zadana.\n\n' +
+            '• Za igranje na serveru modal sadrži godine + 4 ključna pitanja za prijavu.\n\n' +
             '**Pravila tiketa:**\n' +
             '• Svi problemi moraju biti jasno i detaljno opisani, bez poruka tipa "ne radi".\n' +
             '• Poštujte članove staff tima.\n' +
@@ -1851,32 +1876,7 @@ client.on('interactionCreate', async (interaction) => {
             '• Kršenje pravila može rezultirati zatvaranjem tiketa ili sankcijama.'
         );
 
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId('ticket_category')
-        .setPlaceholder('Odaberi vrstu tiketa')
-        .addOptions(
-          {
-            label: 'Igranje na serveru',
-            description:
-              'Jedan modal, provjera 18+ i odgovori redom u velikom unosu.',
-            value: 'igranje',
-            emoji: '🎮',
-          },
-          {
-            label: 'Žalba na igrače',
-            description: 'Prijavi igrača koji krši pravila servera.',
-            value: 'zalba',
-            emoji: '⚠️',
-          },
-          {
-            label: 'Edit modova',
-            description: 'Ako trebaš pomoć ili savjet oko edita modova.',
-            value: 'modovi',
-            emoji: '🧩',
-          }
-        );
-
-      const row = new ActionRowBuilder().addComponents(menu);
+      const row = buildTicketCategoryRow();
 
       await interaction.deferReply({ ephemeral: true });
       await interaction.deleteReply();
@@ -2110,6 +2110,12 @@ if (interaction.commandName === 'update-field') {
       type,
       questions: Array.isArray(typeCfg.questions) ? typeCfg.questions : [],
     });
+
+    if (interaction.message?.editable) {
+      await interaction.message.edit({
+        components: [buildTicketCategoryRow()],
+      }).catch(() => {});
+    }
 
     await interaction.showModal(buildTicketQuestionModal(type, typeCfg));
     return;
