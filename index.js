@@ -1560,6 +1560,10 @@ async function sendBlacklistLog(guild, options) {
     embed.addFields(payload.fields);
   }
 
+  if (payload.footerText) {
+    embed.setFooter({ text: payload.footerText });
+  }
+
   await channel.send({ embeds: [embed] }).catch(() => {});
 }
 
@@ -1596,31 +1600,43 @@ function formatBlacklistLogEmbedFromText(content) {
   const actorLabel = isRemove ? 'Maknuo' : 'Dodao';
   const actionEmoji = isRemove ? '✅' : '⛔';
 
-  const description = [
-    `${actionEmoji} **Akcija evidentirana**`,
-    '',
-    `**Korisnik:** ${userId ? `<@${userId}>` : (details.korisnik || '-')}`,
-    details.korisnik ? `**ID korisnika:** \`${userId || details.korisnik}\`` : null,
-    `**${actorLabel}:** ${actorId ? `<@${actorId}>` : (details.dodao || details.maknuo || '-')}`,
-    actorId ? `**ID staffa:** \`${actorId}\`` : null,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  const userDisplay = userId ? `<@${userId}>` : (details.korisnik || '-');
+  const actorDisplay = actorId
+    ? `<@${actorId}>`
+    : (details.dodao || details.maknuo || '-');
 
-  const fields = [];
+  const fields = [
+    {
+      name: '👤 Korisnik',
+      value: `${userDisplay}\n\`${userId || details.korisnik || '-'}\``,
+      inline: true,
+    },
+    {
+      name: `🛡️ ${actorLabel}`,
+      value: `${actorDisplay}\n\`${actorId || details.dodao || details.maknuo || '-'}\``,
+      inline: true,
+    },
+  ];
+
   if (details.razlog) {
     fields.push({
-      name: 'Razlog',
+      name: '📝 Razlog',
       value: details.razlog,
+      inline: false,
+    });
+  } else if (!isRemove) {
+    fields.push({
+      name: '📝 Razlog',
+      value: '[prazno]',
       inline: false,
     });
   }
 
   return {
     color,
-    title,
-    description,
+    title: `${actionEmoji} ${title}`,
     fields,
+    footerText: `User ID: ${userId || '-'} • ${new Date().toLocaleString('hr-HR')}`,
   };
 }
 
