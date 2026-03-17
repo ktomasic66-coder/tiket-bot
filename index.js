@@ -1573,30 +1573,55 @@ function formatBlacklistLogEmbedFromText(content) {
   const isRemove = /maknut/i.test(firstLine);
   const color = isRemove ? '#3ba55d' : '#ed4245';
   const title = isRemove
-    ? 'Korisnik Maknut S Ticket Blackliste'
-    : 'Korisnik Dodan Na Ticket Blacklistu';
+    ? 'Korisnik Maknut S Blackliste'
+    : 'Korisnik Dodan Na Blacklistu';
 
-  const fields = lines.slice(1).map((line) => {
+  const details = {};
+  for (const line of lines.slice(1)) {
     const separatorIndex = line.indexOf(':');
-    if (separatorIndex === -1) {
-      return {
-        name: 'Detalj',
-        value: line,
-        inline: false,
-      };
-    }
+    if (separatorIndex === -1) continue;
 
-    const name = line.slice(0, separatorIndex).trim() || 'Detalj';
-    const value = line.slice(separatorIndex + 1).trim() || '-';
+    const key = line.slice(0, separatorIndex).trim().toLowerCase();
+    const value = line.slice(separatorIndex + 1).trim();
+    if (value) details[key] = value;
+  }
 
-    return {
-      name,
-      value,
+  const extractId = (value) => {
+    const match = String(value || '').match(/\((\d{5,})\)/);
+    return match ? match[1] : null;
+  };
+
+  const userId = extractId(details.korisnik);
+  const actorId = extractId(details.dodao || details.maknuo);
+  const actorLabel = isRemove ? 'Maknuo' : 'Dodao';
+  const actionEmoji = isRemove ? '✅' : '⛔';
+
+  const description = [
+    `${actionEmoji} **Akcija evidentirana**`,
+    '',
+    `**Korisnik:** ${userId ? `<@${userId}>` : (details.korisnik || '-')}`,
+    details.korisnik ? `**ID korisnika:** \`${userId || details.korisnik}\`` : null,
+    `**${actorLabel}:** ${actorId ? `<@${actorId}>` : (details.dodao || details.maknuo || '-')}`,
+    actorId ? `**ID staffa:** \`${actorId}\`` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const fields = [];
+  if (details.razlog) {
+    fields.push({
+      name: 'Razlog',
+      value: details.razlog,
       inline: false,
-    };
-  });
+    });
+  }
 
-  return { color, title, fields };
+  return {
+    color,
+    title,
+    description,
+    fields,
+  };
 }
 
 async function addBlacklistRole(member) {
