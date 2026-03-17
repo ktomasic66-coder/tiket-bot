@@ -57,6 +57,31 @@ const commands = [
   new SlashCommandBuilder()
     .setName('field-panel')
     .setDescription('Pošalji panel za upravljanje poljima (dodavanje polja) u ovaj kanal.'),
+  new SlashCommandBuilder()
+    .setName('ticket-blacklist')
+    .setDescription('Dodaj korisnika na blacklistu za otvaranje ticketa.')
+    .addUserOption(opt =>
+      opt
+        .setName('user')
+        .setDescription('Korisnik kojeg zelis blokirati za otvaranje ticketa')
+        .setRequired(true)
+    )
+    .addStringOption(opt =>
+      opt
+        .setName('reason')
+        .setDescription('Razlog blacklistanja')
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('ticket-unblacklist')
+    .setDescription('Makni korisnika s blackliste za otvaranje ticketa.')
+    .addUserOption(opt =>
+      opt
+        .setName('user')
+        .setDescription('Korisnik kojeg zelis maknuti s blackliste')
+        .setRequired(true)
+    ),
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(token);

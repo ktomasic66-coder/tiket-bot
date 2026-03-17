@@ -111,6 +111,7 @@ function getDefaultData() {
       channelId: '',
     },
     embeds: [],
+    ticketBlacklist: [],
     ticketSystem: JSON.parse(JSON.stringify(DEFAULT_TICKET_SYSTEM)),
     // 🔹 ovdje ćemo spremati aktivne/završene FS zadatke (da ih možemo naći po polju)
     farmingTasks: [],
@@ -135,6 +136,9 @@ function mergeDbData(raw) {
       ...(data.logging || {}),
     },
     embeds: Array.isArray(data.embeds) ? data.embeds : base.embeds,
+    ticketBlacklist: Array.isArray(data.ticketBlacklist)
+      ? data.ticketBlacklist
+      : base.ticketBlacklist,
     ticketSystem: {
       ...base.ticketSystem,
       ...(data.ticketSystem || {}),
@@ -276,6 +280,17 @@ async function initMySql() {
         UNIQUE KEY uniq_ticket_channel (channel_id)
       )
     `);
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS ticket_blacklist (
+        guild_id VARCHAR(40) NOT NULL,
+        user_id VARCHAR(40) NOT NULL,
+        added_by_id VARCHAR(40) NULL,
+        reason VARCHAR(255) NULL,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, user_id)
+      )
+    `);
 
     const [rows] = await dbPool.query(
       'SELECT config_value FROM bot_config WHERE config_key = ? LIMIT 1',
@@ -290,6 +305,7 @@ async function initMySql() {
     }
 
     useMySql = true;
+    await migrateLegacyTicketBlacklist();
     console.log('Bot koristi zajednički MySQL storage.');
   } catch (err) {
     console.log('Bot MySQL init error, ostajem na JSON storageu:', err.message);
@@ -308,6 +324,148 @@ function saveDb(data) {
   persistDbCache().catch((err) => {
     console.log('BOT CONFIG SAVE ERROR:', err.message);
   });
+}
+
+function getLocalTicketBlacklist() {
+  const data = loadDb();
+  return Array.isArray(data.ticketBlacklist) ? data.ticketBlacklist : [];
+}
+
+async function migrateLegacyTicketBlacklist() {
+  if (!useMySql || !dbPool) return;
+
+  const data = loadDb();
+  const legacyEntries = Array.isArray(data.ticketBlacklist) ? data.ticketBlacklist : [];
+  if (!legacyEntries.length) return;
+
+  for (const entry of legacyEntries) {
+    if (!entry?.userId) continue;
+
+    await dbPool.query(
+      `INSERT INTO ticket_blacklist (guild_id, user_id, added_by_id, reason, added_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         added_by_id = VALUES(added_by_id),
+         reason = VALUES(reason),
+         added_at = VALUES(added_at)`,
+      [
+        guildId || '',
+        String(entry.userId),
+        entry.addedBy ? String(entry.addedBy) : null,
+        entry.reason ? String(entry.reason) : null,
+        entry.addedAt ? new Date(entry.addedAt) : new Date(),
+      ]
+    );
+  }
+
+  data.ticketBlacklist = [];
+  saveDb(data);
+}
+
+async function getTicketBlacklistEntry(guildIdValue, userId) {
+  const normalizedGuildId = String(guildIdValue || guildId || '');
+  const normalizedUserId = String(userId);
+
+  if (useMySql && dbPool) {
+    const [rows] = await dbPool.query(
+      `SELECT guild_id, user_id, added_by_id, reason, added_at
+       FROM ticket_blacklist
+       WHERE guild_id = ? AND user_id = ?
+       LIMIT 1`,
+      [normalizedGuildId, normalizedUserId]
+    );
+
+    if (rows.length) {
+      return {
+        guildId: rows[0].guild_id,
+        userId: rows[0].user_id,
+        addedBy: rows[0].added_by_id || '',
+        reason: rows[0].reason || '',
+        addedAt: rows[0].added_at ? new Date(rows[0].added_at).toISOString() : null,
+      };
+    }
+
+    return null;
+  }
+
+  return (
+    getLocalTicketBlacklist().find((entry) => entry.userId === normalizedUserId) || null
+  );
+}
+
+async function addUserToTicketBlacklist({ guildId: guildIdValue, userId, addedBy, reason = '' }) {
+  const normalizedGuildId = String(guildIdValue || guildId || '');
+  const normalizedUserId = String(userId);
+  const nextEntry = {
+    guildId: normalizedGuildId,
+    userId: normalizedUserId,
+    addedBy: addedBy ? String(addedBy) : '',
+    reason: String(reason || '').trim(),
+    addedAt: new Date().toISOString(),
+  };
+
+  if (useMySql && dbPool) {
+    await dbPool.query(
+      `INSERT INTO ticket_blacklist (guild_id, user_id, added_by_id, reason, added_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         added_by_id = VALUES(added_by_id),
+         reason = VALUES(reason),
+         added_at = VALUES(added_at)`,
+      [
+        nextEntry.guildId,
+        nextEntry.userId,
+        nextEntry.addedBy || null,
+        nextEntry.reason || null,
+        new Date(nextEntry.addedAt),
+      ]
+    );
+
+    return nextEntry;
+  }
+
+  const data = loadDb();
+  const blacklist = Array.isArray(data.ticketBlacklist) ? data.ticketBlacklist : [];
+  const existingIndex = blacklist.findIndex((entry) => entry.userId === normalizedUserId);
+
+  if (existingIndex >= 0) {
+    blacklist[existingIndex] = {
+      ...blacklist[existingIndex],
+      ...nextEntry,
+    };
+  } else {
+    blacklist.push(nextEntry);
+  }
+
+  data.ticketBlacklist = blacklist;
+  saveDb(data);
+
+  return nextEntry;
+}
+
+async function removeUserFromTicketBlacklist(guildIdValue, userId) {
+  const normalizedGuildId = String(guildIdValue || guildId || '');
+  const normalizedUserId = String(userId);
+
+  if (useMySql && dbPool) {
+    const [result] = await dbPool.query(
+      'DELETE FROM ticket_blacklist WHERE guild_id = ? AND user_id = ?',
+      [normalizedGuildId, normalizedUserId]
+    );
+    return result.affectedRows > 0;
+  }
+
+  const data = loadDb();
+  const blacklist = Array.isArray(data.ticketBlacklist) ? data.ticketBlacklist : [];
+  const nextBlacklist = blacklist.filter((entry) => entry.userId !== normalizedUserId);
+  const removed = nextBlacklist.length !== blacklist.length;
+
+  if (removed) {
+    data.ticketBlacklist = nextBlacklist;
+    saveDb(data);
+  }
+
+  return removed;
 }
 
 // helper: vraća ticket config = default + ono što je u db.json
@@ -2183,6 +2341,54 @@ if (interaction.commandName === 'task-panel') {
     }
 
     // /reset-season – resetira aktivnu sezonu sjetve
+    if (interaction.commandName === 'ticket-blacklist') {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({
+          content: 'â›” Samo staff/admin moÅ¾e dodavati korisnike na ticket blacklistu.',
+          ephemeral: true,
+        });
+      }
+
+      const targetUser = interaction.options.getUser('user', true);
+      const reason = interaction.options.getString('reason') || '';
+
+      const entry = await addUserToTicketBlacklist({
+        guildId: interaction.guild?.id,
+        userId: targetUser.id,
+        addedBy: interaction.user.id,
+        reason,
+      });
+
+      return interaction.reply({
+        content:
+          `⛔ <@${targetUser.id}> je dodan na ticket blacklistu i vise ne moze otvarati tickete.` +
+          (entry.reason ? `\nRazlog: ${entry.reason}` : ''),
+        ephemeral: true,
+      });
+    }
+
+    if (interaction.commandName === 'ticket-unblacklist') {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({
+          content: 'â›” Samo staff/admin moÅ¾e skidati korisnike s ticket blackliste.',
+          ephemeral: true,
+        });
+      }
+
+      const targetUser = interaction.options.getUser('user', true);
+      const removed = await removeUserFromTicketBlacklist(
+        interaction.guild?.id,
+        targetUser.id
+      );
+
+      return interaction.reply({
+        content: removed
+          ? `✅ <@${targetUser.id}> je maknut s ticket blackliste i ponovno moze otvarati tickete.`
+          : `⚠️ <@${targetUser.id}> nije bio na ticket blackliste.`,
+        ephemeral: true,
+      });
+    }
+
 if (interaction.commandName === 'reset-season') {
   if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
     return interaction.reply({
@@ -2251,6 +2457,19 @@ if (interaction.commandName === 'update-field') {
     const type = interaction.values[0];
     const guild = interaction.guild;
     const member = interaction.member;
+    const blacklistEntry = await getTicketBlacklistEntry(
+      interaction.guild?.id,
+      interaction.user.id
+    );
+
+    if (blacklistEntry) {
+      return interaction.reply({
+        content:
+          '⛔ Trenutno ne mozes otvoriti ticket jer si na ticket blackliste.' +
+          (blacklistEntry.reason ? `\nRazlog: ${blacklistEntry.reason}` : ''),
+        ephemeral: true,
+      });
+    }
 
     const cfg = getTicketConfig();
     const typeCfg = cfg.types[type];
@@ -3109,6 +3328,20 @@ if (!task.cropName) {
       const cfg = getTicketConfig();
       const typeCfg = cfg.types[type];
       const state = pendingTicketForms.get(interaction.user.id);
+      const blacklistEntry = await getTicketBlacklistEntry(
+        interaction.guild?.id,
+        interaction.user.id
+      );
+
+      if (blacklistEntry) {
+        pendingTicketForms.delete(interaction.user.id);
+        return interaction.reply({
+          content:
+            '⛔ Ne mozes zavrsiti otvaranje ticketa jer si na ticket blackliste.' +
+            (blacklistEntry.reason ? `\nRazlog: ${blacklistEntry.reason}` : ''),
+          ephemeral: true,
+        });
+      }
 
       if (!typeCfg || !state || state.type !== type) {
         return interaction.reply({
