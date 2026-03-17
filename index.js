@@ -40,6 +40,7 @@ const SUPPORT_ROLE_ID = process.env.SUPPORT_ROLE_ID; // rola za support
 // secret za Farming Server webhooks
 const FS_WEBHOOK_SECRET = process.env.FS_WEBHOOK_SECRET;
 const BLACKLIST_LOG_CHANNEL_ID = '1483576763811364935';
+const BLACKLIST_ROLE_ID = '1483578948611866714';
 
 // =====================
 //  "DB" PREKO JSON FAJLA (za dashboard: welcome/logging/embeds/tickets)
@@ -1535,13 +1536,83 @@ const FS_JOB_DONE_CHANNEL_ID = '1442951254287454399';
 // ❗ kanal gdje idu FS25 TELEMETRY logovi (embed s vozilom)
 const FS_TELEMETRY_CHANNEL_ID = process.env.FS_TELEMETRY_CHANNEL_ID || '';
 
-async function sendBlacklistLog(guild, content) {
+async function sendBlacklistLog(guild, options) {
   if (!guild || !BLACKLIST_LOG_CHANNEL_ID) return;
 
   const channel = await guild.channels.fetch(BLACKLIST_LOG_CHANNEL_ID).catch(() => null);
   if (!channel) return;
 
-  await channel.send(content).catch(() => {});
+  const payload =
+    typeof options === 'string'
+      ? formatBlacklistLogEmbedFromText(options)
+      : options;
+
+  const embed = new EmbedBuilder()
+    .setColor(payload.color || '#2f3136')
+    .setTitle(payload.title || 'Ticket Blacklist')
+    .setTimestamp();
+
+  if (payload.description) {
+    embed.setDescription(payload.description);
+  }
+
+  if (Array.isArray(payload.fields) && payload.fields.length) {
+    embed.addFields(payload.fields);
+  }
+
+  await channel.send({ embeds: [embed] }).catch(() => {});
+}
+
+function formatBlacklistLogEmbedFromText(content) {
+  const lines = String(content || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const firstLine = lines[0] || 'Ticket Blacklist';
+  const isRemove = /maknut/i.test(firstLine);
+  const color = isRemove ? '#3ba55d' : '#ed4245';
+  const title = isRemove
+    ? 'Korisnik Maknut S Ticket Blackliste'
+    : 'Korisnik Dodan Na Ticket Blacklistu';
+
+  const fields = lines.slice(1).map((line) => {
+    const separatorIndex = line.indexOf(':');
+    if (separatorIndex === -1) {
+      return {
+        name: 'Detalj',
+        value: line,
+        inline: false,
+      };
+    }
+
+    const name = line.slice(0, separatorIndex).trim() || 'Detalj';
+    const value = line.slice(separatorIndex + 1).trim() || '-';
+
+    return {
+      name,
+      value,
+      inline: false,
+    };
+  });
+
+  return { color, title, fields };
+}
+
+async function addBlacklistRole(member) {
+  if (!member || !BLACKLIST_ROLE_ID) return false;
+  if (member.roles.cache.has(BLACKLIST_ROLE_ID)) return true;
+
+  await member.roles.add(BLACKLIST_ROLE_ID).catch(() => {});
+  return member.roles.cache.has(BLACKLIST_ROLE_ID);
+}
+
+async function removeBlacklistRole(member) {
+  if (!member || !BLACKLIST_ROLE_ID) return false;
+  if (!member.roles.cache.has(BLACKLIST_ROLE_ID)) return true;
+
+  await member.roles.remove(BLACKLIST_ROLE_ID).catch(() => {});
+  return !member.roles.cache.has(BLACKLIST_ROLE_ID);
 }
 
 // mapa za FARMING zadatke (po korisniku)
@@ -2143,6 +2214,10 @@ client.on('guildMemberAdd', async (member) => {
   const cfg = data.welcome;
   const blacklistEntry = await getTicketBlacklistEntry(member.guild.id, member.id);
 
+  if (blacklistEntry) {
+    await addBlacklistRole(member);
+  }
+
   if (cfg?.channelId && cfg?.message) {
     const ch = await client.channels.fetch(cfg.channelId).catch(() => null);
     if (ch) {
@@ -2383,7 +2458,7 @@ if (interaction.commandName === 'task-panel') {
     }
 
     // /reset-season – resetira aktivnu sezonu sjetve
-    if (interaction.commandName === 'ticket-blacklist') {
+    if (interaction.commandName === 'blacklist') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
           content: 'â›” Samo staff/admin moÅ¾e dodavati korisnike na ticket blacklistu.',
@@ -2400,6 +2475,13 @@ if (interaction.commandName === 'task-panel') {
         addedBy: interaction.user.id,
         reason,
       });
+      const targetMember = await interaction.guild.members
+        .fetch(targetUser.id)
+        .catch(() => null);
+
+      if (targetMember) {
+        await addBlacklistRole(targetMember);
+      }
 
       await sendBlacklistLog(
         interaction.guild,
@@ -2419,7 +2501,7 @@ if (interaction.commandName === 'task-panel') {
       });
     }
 
-    if (interaction.commandName === 'ticket-unblacklist') {
+    if (interaction.commandName === 'unblacklist') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
           content: 'â›” Samo staff/admin moÅ¾e skidati korisnike s ticket blackliste.',
@@ -2432,6 +2514,13 @@ if (interaction.commandName === 'task-panel') {
         interaction.guild?.id,
         targetUser.id
       );
+      const targetMember = await interaction.guild.members
+        .fetch(targetUser.id)
+        .catch(() => null);
+
+      if (removed && targetMember) {
+        await removeBlacklistRole(targetMember);
+      }
 
       if (removed) {
         await sendBlacklistLog(

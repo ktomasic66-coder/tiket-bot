@@ -46,7 +46,7 @@ const commands = [
     .setDescription('Posalji panel za upravljanje poljima (dodavanje polja) u ovaj kanal.'),
 
   new SlashCommandBuilder()
-    .setName('ticket-blacklist')
+    .setName('blacklist')
     .setDescription('Dodaj korisnika na blacklistu za otvaranje ticketa.')
     .addUserOption((opt) =>
       opt
@@ -62,7 +62,7 @@ const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName('ticket-unblacklist')
+    .setName('unblacklist')
     .setDescription('Makni korisnika s blackliste za otvaranje ticketa.')
     .addUserOption((opt) =>
       opt
