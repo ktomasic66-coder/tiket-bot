@@ -25,7 +25,11 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  REST,
+  Routes,
 } = require('discord.js');
+
+const commands = require('./commands');
 
 // 🔹 ENV varijable
 const token = process.env.TOKEN;
@@ -1540,6 +1544,23 @@ const ticketReminders = new Map();
 // === mapa za AUTO-CLOSE tiketa (kanal -> timeoutId) ===
 const ticketInactivity = new Map();
 
+async function registerApplicationCommands() {
+  if (!token || !clientId || !guildId) {
+    console.log('Slash komande nisu registrirane: nedostaje TOKEN, CLIENT_ID ili GUILD_ID.');
+    return;
+  }
+
+  try {
+    const rest = new REST({ version: '10' }).setToken(token);
+    await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
+      body: commands,
+    });
+    console.log('Slash komande su registrirane/azurirane.');
+  } catch (err) {
+    console.log('Registracija slash komandi nije uspjela:', err.message);
+  }
+}
+
 console.log('▶ Pokrećem bota...');
 
 const client = new Client({
@@ -1563,6 +1584,7 @@ client.once('ready', async () => {
   } catch (err) {
     console.log("⚠️ Greška pri obnavljanju Sezone Sjetve:", err);
   }
+  await registerApplicationCommands();
 });
 
 
