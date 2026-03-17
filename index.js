@@ -39,7 +39,7 @@ const guildId = process.env.GUILD_ID?.trim();
 const SUPPORT_ROLE_ID = process.env.SUPPORT_ROLE_ID; // rola za support
 // secret za Farming Server webhooks
 const FS_WEBHOOK_SECRET = process.env.FS_WEBHOOK_SECRET;
-const BLACKLIST_LOG_CHANNEL_ID = '1271570784866799718';
+const BLACKLIST_LOG_CHANNEL_ID = '1483576763811364935';
 const BLACKLIST_ROLE_ID = '1483578948611866714';
 
 // =====================
