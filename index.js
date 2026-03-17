@@ -39,6 +39,7 @@ const guildId = process.env.GUILD_ID?.trim();
 const SUPPORT_ROLE_ID = process.env.SUPPORT_ROLE_ID; // rola za support
 // secret za Farming Server webhooks
 const FS_WEBHOOK_SECRET = process.env.FS_WEBHOOK_SECRET;
+const BLACKLIST_LOG_CHANNEL_ID = '1483576763811364935';
 
 // =====================
 //  "DB" PREKO JSON FAJLA (za dashboard: welcome/logging/embeds/tickets)
@@ -1534,6 +1535,15 @@ const FS_JOB_DONE_CHANNEL_ID = '1442951254287454399';
 // ❗ kanal gdje idu FS25 TELEMETRY logovi (embed s vozilom)
 const FS_TELEMETRY_CHANNEL_ID = process.env.FS_TELEMETRY_CHANNEL_ID || '';
 
+async function sendBlacklistLog(guild, content) {
+  if (!guild || !BLACKLIST_LOG_CHANNEL_ID) return;
+
+  const channel = await guild.channels.fetch(BLACKLIST_LOG_CHANNEL_ID).catch(() => null);
+  if (!channel) return;
+
+  await channel.send(content).catch(() => {});
+}
+
 // mapa za FARMING zadatke (po korisniku)
 const activeTasks = new Map(); // key: userId, value: { field: string | null }
 const pendingTicketForms = new Map(); // key: userId, value: { type, questions, answers }
@@ -2131,23 +2141,33 @@ async function sendTicketTranscript(channel, closedByUser) {
 client.on('guildMemberAdd', async (member) => {
   const data = loadDb();
   const cfg = data.welcome;
+  const blacklistEntry = await getTicketBlacklistEntry(member.guild.id, member.id);
 
-  if (!cfg?.channelId || !cfg?.message) return;
+  if (cfg?.channelId && cfg?.message) {
+    const ch = await client.channels.fetch(cfg.channelId).catch(() => null);
+    if (ch) {
+      const msg = cfg.message
+        .replace(/{user}/g, `<@${member.id}>`)
+        .replace(/{username}/g, member.user.username);
 
-  const ch = await client.channels.fetch(cfg.channelId).catch(() => null);
-  if (!ch) return;
-
-  const msg = cfg.message
-    .replace(/{user}/g, `<@${member.id}>`)
-    .replace(/{username}/g, member.user.username);
-
-  ch.send(msg).catch(() => {});
+      ch.send(msg).catch(() => {});
+    }
+  }
 
   if (data.logging?.channelId) {
     const logCh = await client.channels
       .fetch(data.logging.channelId)
       .catch(() => null);
     if (logCh) {
+      if (blacklistEntry) {
+        logCh
+          .send(
+            `⛔ Blacklist korisnik se vratio: ${member.user.tag} (ID: ${member.id})` +
+              (blacklistEntry.reason ? ` | Razlog: ${blacklistEntry.reason}` : '')
+          )
+          .catch(() => {});
+        return;
+      }
       logCh
         .send(`✅ Novi član: ${member.user.tag} (ID: ${member.id})`)
         .catch(() => {});
@@ -2381,6 +2401,16 @@ if (interaction.commandName === 'task-panel') {
         reason,
       });
 
+      await sendBlacklistLog(
+        interaction.guild,
+        [
+          '⛔ Korisnik dodan na ticket blacklistu',
+          `Korisnik: ${targetUser.tag} (${targetUser.id})`,
+          `Dodao: ${interaction.user.tag} (${interaction.user.id})`,
+          entry.reason ? `Razlog: ${entry.reason}` : null,
+        ].filter(Boolean).join('\n')
+      );
+
       return interaction.reply({
         content:
           `⛔ <@${targetUser.id}> je dodan na ticket blacklistu i vise ne moze otvarati tickete.` +
@@ -2402,6 +2432,17 @@ if (interaction.commandName === 'task-panel') {
         interaction.guild?.id,
         targetUser.id
       );
+
+      if (removed) {
+        await sendBlacklistLog(
+          interaction.guild,
+          [
+            '✅ Korisnik maknut s ticket blackliste',
+            `Korisnik: ${targetUser.tag} (${targetUser.id})`,
+            `Maknuo: ${interaction.user.tag} (${interaction.user.id})`,
+          ].join('\n')
+        );
+      }
 
       return interaction.reply({
         content: removed
