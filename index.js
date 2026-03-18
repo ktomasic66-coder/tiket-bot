@@ -1,4 +1,4 @@
-// 🔹 prvo učitaj .env  
+// Ã°Å¸â€Â¹ prvo uÃ„Âitaj .env  
 require('dotenv').config();
 
 const path = require('path');
@@ -31,7 +31,7 @@ const {
 
 const commands = require('./commands');
 
-// 🔹 ENV varijable
+// Ã°Å¸â€Â¹ ENV varijable
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID?.trim();
@@ -60,6 +60,7 @@ const DEFAULT_TICKET_SYSTEM = {
   logChannelId: '',               // gdje idu transkripti
   categoryId: '',                 // kategorija za tikete
   supportRoleId: '',              // support rola (ako želiš override env-a)
+  launcherChannelId: '1481028377489047613',
   autoCloseHours: 48,             // nakon koliko sati neaktivnosti se auto zatvara
   reminderHours: 3,               // svakih koliko MINUTA ide podsjetnik (mi ćemo ga tretirati kao minute)
   types: {
@@ -100,17 +101,48 @@ const DEFAULT_TICKET_SYSTEM = {
   },
   messages: {
     reminder:
-      'Hej {user}! 😊\n' +
+      'Hej {user}!\n' +
       'Još uvijek nisi odgovorio na pitanja iz prve poruke u tiketu.\n\n' +
-      'Molimo te da se vratiš na početnu poruku i odgovoriš na sva pitanja, ' +
-      'kako bismo mogli nastaviti s procesom.',
+      'Molimo te da se vratiš na početnu poruku i odgovoriš na sva pitanja, kako bismo mogli nastaviti s procesom.',
     autoClose:
-      'Ticket je automatski zatvoren jer 48 sati nije bilo aktivnosti. ' +
-      'Ako i dalje trebaš pomoć, slobodno otvori novi ticket pomoć. 🙂',
+      'Ticket je automatski zatvoren jer 48 sati nije bilo aktivnosti. Ako i dalje trebaš pomoć, slobodno otvori novi ticket.',
+    igranjeWelcomeTitle: 'Dobrodošao/la na Slavonsku Ravnicu!',
+    igranjeWelcomeBody:
+      'Bok i dobrodošao na Slavonsku Ravnicu! 🚜\n' +
+      'Ticket ti je prošao i primljen/a si na server.\n\n' +
+      'Za ulazak u igru idi u kanal {launcherChannel} i tamo skini naš launcher jer unutra ti sve piše i to je glavni način za ulazak na server.\n\n' +
+      'Ako želiš, modove možeš dodati i ručno preko ovog linka:\n' +
+      'http://176.57.169.250:8620/mods.html?lang=en\n\n' +
+      'Samo imaj na umu da će se sva buduća ažuriranja prikazivati isključivo kroz launcher, tako da više nećemo posebno lijepiti linkove za nove ili ažurirane modove. Zato ti je launcher ubuduće glavno mjesto za sve updateove.\n\n' +
+      'Ako ti bilo što zapne oko instalacije, modova ili ulaska u igru, slobodno se javi.\n' +
+      'Vidimo se na farmi. 🌾',
+    igranjeRulesTitle: 'Pravila servera',
+    igranjeRulesBody:
+      'Molimo te da pročitaš pravila servera prije početka igre.\n\n' +
+      '• Poštuj sve igrače na serveru\n' +
+      '• Zabranjeno je uništavanje tuđe imovine\n' +
+      '• Ne ostavljaj vozila na cesti\n' +
+      '• Koristi samo svoja polja i farmu\n' +
+      '• Exploit/cheat = trajni ban\n' +
+      '• Slušaj upute admina i moderatora\n\n' +
+      'Kršenje pravila rezultira opomenom, kickom ili banom. ⚠️',
+    igranjeLauncherTitle: 'Launcher -- preuzimanje i instalacija',
+    igranjeLauncherBody:
+      'Naš launcher je glavni način za ulazak na server.\n\n' +
+      '**Gdje preuzeti?**\n' +
+      'Idi u kanal {launcherChannel} i preuzmi launcher.\n\n' +
+      '**Kako radi?**\n' +
+      '• Pokreni launcher\n' +
+      '• Automatski će preuzeti sve potrebne modove\n' +
+      '• Klikni "Play" i igra te prebacuje na server\n\n' +
+      '**Problemi?**\n' +
+      '• Pokreni launcher kao Administrator\n' +
+      '• Provjeri da ti antivirus ne blokira\n' +
+      '• Ako ništa ne pomaže, javi se u support kanal',
   },
 };
 
-// 🔹 default polja za Farming zadatke (prebacujemo iz koda u db.json)
+// Ã°Å¸â€Â¹ default polja za Farming zadatke (prebacujemo iz koda u db.json)
 const DEFAULT_FARMING_FIELDS = [];
 
 // default sezonski podaci za sjetvu
@@ -121,7 +153,7 @@ function getDefaultData() {
   return {
     welcome: {
       channelId: '',
-      message: 'Dobrodošao {user} na server!',
+      message: 'DobrodoÃ…Â¡ao {user} na server!',
     },
     logging: {
       channelId: '',
@@ -131,10 +163,10 @@ function getDefaultData() {
     ticketSubmissions: [],
     ticketRecords: [],
     ticketSystem: JSON.parse(JSON.stringify(DEFAULT_TICKET_SYSTEM)),
-    // 🔹 ovdje ćemo spremati aktivne/završene FS zadatke (da ih možemo naći po polju)
+    // Ã°Å¸â€Â¹ ovdje Ã„â€¡emo spremati aktivne/zavrÃ…Â¡ene FS zadatke (da ih moÃ…Â¾emo naÃ„â€¡i po polju)
     farmingTasks: [],
     farmingFields: [...DEFAULT_FARMING_FIELDS],
-    sowingSeasons: [...DEFAULT_SOWING_SEASONS],   // ✅ OVO NEDOSTAJE
+    sowingSeasons: [...DEFAULT_SOWING_SEASONS],   // Ã¢Å“â€¦ OVO NEDOSTAJE
   };
 }
 
@@ -334,7 +366,7 @@ async function initMySql() {
 
     useMySql = true;
     await migrateLegacyTicketBlacklist();
-    console.log('Bot koristi zajednički MySQL storage.');
+    console.log('Bot koristi zajedniÃ„Âki MySQL storage.');
   } catch (err) {
     console.log('Bot MySQL init error, ostajem na JSON storageu:', err.message);
     useMySql = false;
@@ -496,16 +528,18 @@ async function removeUserFromTicketBlacklist(guildIdValue, userId) {
   return removed;
 }
 
-// helper: vraća ticket config = default + ono što je u db.json
+// helper: vraÃ„â€¡a ticket config = default + ono Ã…Â¡to je u db.json
 function getTicketConfig() {
   const data = loadDb();
   const cfg = data.ticketSystem || {};
 
   const merged = {
-    // ako u configu nema ID, koristi hard-coded konstante niže (TICKET_CATEGORY_ID / TICKET_LOG_CHANNEL_ID)
+    // ako u configu nema ID, koristi hard-coded konstante niÃ…Â¾e (TICKET_CATEGORY_ID / TICKET_LOG_CHANNEL_ID)
     logChannelId: cfg.logChannelId || TICKET_LOG_CHANNEL_ID || DEFAULT_TICKET_SYSTEM.logChannelId,
     categoryId: cfg.categoryId || TICKET_CATEGORY_ID || DEFAULT_TICKET_SYSTEM.categoryId,
     supportRoleId: cfg.supportRoleId || SUPPORT_ROLE_ID || DEFAULT_TICKET_SYSTEM.supportRoleId,
+    launcherChannelId:
+      cfg.launcherChannelId || DEFAULT_TICKET_SYSTEM.launcherChannelId,
     autoCloseHours:
       typeof cfg.autoCloseHours === 'number'
         ? cfg.autoCloseHours
@@ -533,17 +567,15 @@ function getTicketConfig() {
       },
     },
     messages: {
-      reminder:
-        cfg.messages?.reminder || DEFAULT_TICKET_SYSTEM.messages.reminder,
-      autoClose:
-        cfg.messages?.autoClose || DEFAULT_TICKET_SYSTEM.messages.autoClose,
+      ...DEFAULT_TICKET_SYSTEM.messages,
+      ...(cfg.messages || {}),
     },
   };
 
   return merged;
 }
 
-// helper: vraća listu polja za Farming zadatke
+// helper: vraÃ„â€¡a listu polja za Farming zadatke
 function getFarmingFields() {
   const data = loadDb();
   const arr = data.farmingFields;
@@ -561,19 +593,19 @@ function saveFarmingFields(fields) {
 }
 
 // =====================
-//  SOWING SEASON SYSTEM – DB + HELPERS
+//  SOWING SEASON SYSTEM Ã¢â‚¬â€œ DB + HELPERS
 // =====================
 
-// ID kanala gdje ide živa embed poruka
+// ID kanala gdje ide Ã…Â¾iva embed poruka
 const SOWING_SEASON_CHANNEL_ID = "1437698436068671528";
 
-// učitaj ili kreiraj listu sezona
+// uÃ„Âitaj ili kreiraj listu sezona
 function getSowingSeasons() {
   const data = loadDb();
 
   if (!Array.isArray(data.sowingSeasons)) {
     data.sowingSeasons = [];
-    saveDb(data); // ← ključna linija
+    saveDb(data); // Ã¢â€ Â kljuÃ„Âna linija
   }
 
   return data.sowingSeasons;
@@ -595,7 +627,7 @@ function createNewSeason() {
     season: number,
     messageId: null,
     completed: false,
-    fields: {}, // "36": "ječam"
+    fields: {}, // "36": "jeÃ„Âam"
     createdAt: Date.now(),
   };
 
@@ -630,7 +662,7 @@ function makeSeasonProgressBar(current, total) {
   const percent = Math.round((current / total) * 100);
   const filledCount = Math.round(percent / 10);
   const emptyCount = 10 - filledCount;
-  return "▰".repeat(filledCount) + "▱".repeat(emptyCount) + ` ${percent}%`;
+  return "Ã¢â€“Â°".repeat(filledCount) + "Ã¢â€“Â±".repeat(emptyCount) + ` ${percent}%`;
 }
 
 // update ili kreiranje embed poruke u sezoni
@@ -647,20 +679,20 @@ async function updateSeasonEmbed(guild, forceEmpty = false) {
   if (!channel) return;
 
   // -------------------------------------------------------
-  // 1️⃣ FORCE RESET MODE → prazan embed bez polja
+  // 1Ã¯Â¸ÂÃ¢Æ’Â£ FORCE RESET MODE Ã¢â€ â€™ prazan embed bez polja
   // -------------------------------------------------------
   if (forceEmpty === true) {
     const emptyEmbed = new EmbedBuilder()
       .setColor("#3ba55d")
-      .setTitle(`🌾 Sezona Sjetve #${season.season}`)
-      .setDescription("_Još nema posijanih polja..._")
+      .setTitle(`Ã°Å¸Å’Â¾ Sezona Sjetve #${season.season}`)
+      .setDescription("_JoÃ…Â¡ nema posijanih polja..._")
       .addFields({
         name: "Progres",
         value: `0/${total}\n${makeSeasonProgressBar(0, total)}`
       })
       .setTimestamp();
 
-    // Ako embed postoji, osvježi ga
+    // Ako embed postoji, osvjeÃ…Â¾i ga
     if (season.messageId) {
       const msg = await channel.messages.fetch(season.messageId).catch(() => null);
       if (msg) {
@@ -684,19 +716,19 @@ async function updateSeasonEmbed(guild, forceEmpty = false) {
   }
 
   // -------------------------------------------------------
-  // 2️⃣ NORMALNI MODE → prikaz samo posijanih polja
+  // 2Ã¯Â¸ÂÃ¢Æ’Â£ NORMALNI MODE Ã¢â€ â€™ prikaz samo posijanih polja
   // -------------------------------------------------------
   const lines = [];
 
   for (const f of fields) {
     if (season.fields[f]) {
-      lines.push(`**Polje ${f}** — ${season.fields[f]}`);
+      lines.push(`**Polje ${f}** Ã¢â‚¬â€ ${season.fields[f]}`);
     }
   }
 
 
   if (lines.length === 0) {
-    lines.push("_Još nema posijanih polja..._");
+    lines.push("_JoÃ…Â¡ nema posijanih polja..._");
   }
 
 
@@ -704,7 +736,7 @@ async function updateSeasonEmbed(guild, forceEmpty = false) {
 
   const embed = new EmbedBuilder()
     .setColor("#3ba55d")
-    .setTitle(`🌾 Sezona Sjetve #${season.season}`)
+    .setTitle(`Ã°Å¸Å’Â¾ Sezona Sjetve #${season.season}`)
     .setDescription(lines.join("\n"))
     .addFields({
       name: "Progres",
@@ -712,7 +744,7 @@ async function updateSeasonEmbed(guild, forceEmpty = false) {
     })
     .setTimestamp();
 
-  // Ako embed još ne postoji — kreiraj ga
+  // Ako embed joÃ…Â¡ ne postoji Ã¢â‚¬â€ kreiraj ga
   if (!season.messageId) {
     const sent = await channel.send({ embeds: [embed] });
     season.messageId = sent.id;
@@ -726,7 +758,7 @@ async function updateSeasonEmbed(guild, forceEmpty = false) {
     return;
   }
 
-  // Inače — osvježi embed
+  // InaÃ„Âe Ã¢â‚¬â€ osvjeÃ…Â¾i embed
   const msg = await channel.messages.fetch(season.messageId).catch(() => null);
 
   if (!msg) {
@@ -745,14 +777,14 @@ async function updateSeasonEmbed(guild, forceEmpty = false) {
 
   await msg.edit({ embeds: [embed] });
 
-  // Završetak sezone
+  // ZavrÃ…Â¡etak sezone
   if (sownCount >= total && !season.completed) {
     season.completed = true;
     saveSowingSeasons(getSowingSeasons());
 
     const doneEmbed = EmbedBuilder.from(embed)
       .setColor("#ffcc00")
-      .setTitle(`🌾 Sezona Sjetve #${season.season} — ✔ Završena`);
+      .setTitle(`Ã°Å¸Å’Â¾ Sezona Sjetve #${season.season} Ã¢â‚¬â€ Ã¢Å“â€ ZavrÃ…Â¡ena`);
 
     await msg.edit({ embeds: [doneEmbed] });
 
@@ -762,16 +794,16 @@ async function updateSeasonEmbed(guild, forceEmpty = false) {
 }
 
 // =====================
-//  SOWING – Upis polja u sezonu
+//  SOWING Ã¢â‚¬â€œ Upis polja u sezonu
 // =====================
 async function handleNewSowingTask(guild, field, cropName) {
     const seasons = getSowingSeasons();
     let season = getActiveSeason();
 
-    // pronađi pravi season objekt
+    // pronaÃ„â€˜i pravi season objekt
     const idx = seasons.findIndex(s => s.season === season.season);
     if (idx === -1) {
-        console.log("⚠️ Sezona nije pronađena u listi!");
+        console.log("Ã¢Å¡Â Ã¯Â¸Â Sezona nije pronaÃ„â€˜ena u listi!");
         return;
     }
 
@@ -781,9 +813,9 @@ async function handleNewSowingTask(guild, field, cropName) {
     // spremi u db.json
     saveSowingSeasons(seasons);
 
-    console.log(`🌱 Upis sjetve → Sezona ${season.season}, Polje ${field}: ${cropName}`);
+    console.log(`Ã°Å¸Å’Â± Upis sjetve Ã¢â€ â€™ Sezona ${season.season}, Polje ${field}: ${cropName}`);
 
-    // osvježavanje embeda
+    // osvjeÃ…Â¾avanje embeda
     await updateSeasonEmbed(guild);
 }
 
@@ -817,7 +849,7 @@ app.use(
   })
 );
 
-// 🧮 helper za lijepi uptime
+// Ã°Å¸Â§Â® helper za lijepi uptime
 function formatUptime(ms) {
   if (!ms) return 'N/A';
   const totalSeconds = Math.floor(ms / 1000);
@@ -846,7 +878,7 @@ app.get('/dashboard', async (req, res) => {
   try {
     guild = await client.guilds.fetch(guildId);
   } catch (e) {
-    console.log('❌ Ne mogu fetchati guild:', guildId, e.message);
+    console.log('Ã¢ÂÅ’ Ne mogu fetchati guild:', guildId, e.message);
   }
 
   console.log(
@@ -871,7 +903,7 @@ app.get('/dashboard', async (req, res) => {
         id: guild.id,
       }
     : {
-        name: 'Guild nije učitan',
+        name: 'Guild nije uÃ„Âitan',
         memberCount: 'N/A',
         id: guildId,
       };
@@ -892,7 +924,7 @@ app.get('/dashboard', async (req, res) => {
           name: c.name,
         }));
     } catch (e) {
-      console.log('❌ Greška pri fetchanju kanala:', e.message);
+      console.log('Ã¢ÂÅ’ GreÃ…Â¡ka pri fetchanju kanala:', e.message);
     }
   }
 
@@ -918,7 +950,7 @@ app.post('/dashboard/greetings', (req, res) => {
   data.welcome.message =
     welcomeMessage && welcomeMessage.trim().length
       ? welcomeMessage
-      : 'Dobrodošao {user} na server!';
+      : 'DobrodoÃ…Â¡ao {user} na server!';
   saveDb(data);
 
   res.redirect('/dashboard?tab=greetings');
@@ -1027,7 +1059,7 @@ app.post('/dashboard/embeds', async (req, res) => {
     res.redirect('/dashboard?tab=embeds');
   } catch (err) {
     console.error('Embed error:', err);
-    res.status(500).send('Greška pri slanju embed-a: ' + err.message);
+    res.status(500).send('GreÃ…Â¡ka pri slanju embed-a: ' + err.message);
   }
 });
 
@@ -1089,7 +1121,7 @@ app.post('/dashboard/tickets', (req, res) => {
 
 
 // =====================
-//  FS WEBHOOK – helper za provjeru secreta
+//  FS WEBHOOK Ã¢â‚¬â€œ helper za provjeru secreta
 // =====================
 function checkFsSecret(req, res) {
   const sent =
@@ -1098,20 +1130,20 @@ function checkFsSecret(req, res) {
     (req.body && req.body.secret);
 
   if (!FS_WEBHOOK_SECRET) {
-    console.warn('⚠️ FS_WEBHOOK_SECRET nije postavljen u .env – odbijam zahtjev.');
+    console.warn('Ã¢Å¡Â Ã¯Â¸Â FS_WEBHOOK_SECRET nije postavljen u .env Ã¢â‚¬â€œ odbijam zahtjev.');
     res.status(500).json({ ok: false, error: 'secret_not_configured' });
     return false;
   }
 
   if (!sent) {
-    console.warn('⚠️ FS webhook: secret nije poslan u headeru/body-u.');
+    console.warn('Ã¢Å¡Â Ã¯Â¸Â FS webhook: secret nije poslan u headeru/body-u.');
     res.status(401).json({ ok: false, error: 'unauthorized' });
     return false;
   }
 
   if (sent !== FS_WEBHOOK_SECRET) {
     console.warn(
-      '⚠️ FS webhook: neispravan secret. serverLen=%d, sentLen=%d',
+      'Ã¢Å¡Â Ã¯Â¸Â FS webhook: neispravan secret. serverLen=%d, sentLen=%d',
       FS_WEBHOOK_SECRET.length,
       String(sent).length
     );
@@ -1124,26 +1156,26 @@ function checkFsSecret(req, res) {
 
 
 // =====================
-//  FS TELEMETRY – helper funkcije (emoji, progress bar, boje, embed)
+//  FS TELEMETRY Ã¢â‚¬â€œ helper funkcije (emoji, progress bar, boje, embed)
 // =====================
 
 function makeProgressBar(percent, size = 10) {
   const p = Math.max(0, Math.min(100, Math.round(percent || 0)));
   const filled = Math.round((p / 100) * size);
   const empty = size - filled;
-  const fullChar = '█';
-  const emptyChar = '░';
+  const fullChar = 'Ã¢â€“Ë†';
+  const emptyChar = 'Ã¢â€“â€˜';
   return fullChar.repeat(filled) + emptyChar.repeat(empty);
 }
 
 function pickVehicleEmoji(typeName = '') {
   const t = typeName.toLowerCase();
-  if (t.includes('combine')) return '🌾';
-  if (t.includes('truck') || t.includes('lkw')) return '🚚';
-  if (t.includes('trailer')) return '🚛';
-  if (t.includes('car') || t.includes('pickup')) return '🚙';
-  if (t.includes('telehandler') || t.includes('loader')) return '🚧';
-  return '🚜';
+  if (t.includes('combine')) return 'Ã°Å¸Å’Â¾';
+  if (t.includes('truck') || t.includes('lkw')) return 'Ã°Å¸Å¡Å¡';
+  if (t.includes('trailer')) return 'Ã°Å¸Å¡â€º';
+  if (t.includes('car') || t.includes('pickup')) return 'Ã°Å¸Å¡â„¢';
+  if (t.includes('telehandler') || t.includes('loader')) return 'Ã°Å¸Å¡Â§';
+  return 'Ã°Å¸Å¡Å“';
 }
 
 function pickColorFromVehicle(v) {
@@ -1151,10 +1183,10 @@ function pickColorFromVehicle(v) {
   const dmg = v.damage?.damagePercent ?? 0;
   const broken = v.damage?.isBroken;
 
-  if (broken || dmg >= 80) return 0xff0000;      // crveno – razbijen
-  if (dmg >= 40) return 0xffa500;                // narančasto – dosta oštećen
-  if (v.isOnAI) return 0xffe000;                 // žuto – AI ga vozi
-  if (v.isRunning) return 0x57f287;              // zeleno – motor radi
+  if (broken || dmg >= 80) return 0xff0000;      // crveno Ã¢â‚¬â€œ razbijen
+  if (dmg >= 40) return 0xffa500;                // naranÃ„Âasto Ã¢â‚¬â€œ dosta oÃ…Â¡teÃ„â€¡en
+  if (v.isOnAI) return 0xffe000;                 // Ã…Â¾uto Ã¢â‚¬â€œ AI ga vozi
+  if (v.isRunning) return 0x57f287;              // zeleno Ã¢â‚¬â€œ motor radi
   return 0x5865f2;                               // default Discord plava
 }
 
@@ -1164,7 +1196,7 @@ function createTelemetryEmbed(telemetry) {
   if (!v) {
     return new EmbedBuilder()
       .setTitle('FS25 TELEMETRY')
-      .setDescription('Nije pronađen nijedan aktivni stroj u telemetriji.')
+      .setDescription('Nije pronaÃ„â€˜en nijedan aktivni stroj u telemetriji.')
       .setColor(0x2f3136);
   }
 
@@ -1180,7 +1212,7 @@ function createTelemetryEmbed(telemetry) {
     ? (fieldId ? `F${fieldId}` : farmlandId ? `farmland ${farmlandId}` : 'na polju')
     : 'izvan polja';
 
-  // fill info – uzimamo prvi spremnik ako postoji
+  // fill info Ã¢â‚¬â€œ uzimamo prvi spremnik ako postoji
   const fill = v.fills?.[0];
   const fillPercent = fill?.percent ?? 0;
   const fillTitle = fill?.title || 'Prazno';
@@ -1200,18 +1232,18 @@ function createTelemetryEmbed(telemetry) {
 
   const isRunning = v.isRunning ? 'ON' : 'OFF';
   const aiText = v.isOnAI ? 'DA' : 'NE';
-  const controlledText = v.isControlled ? 'Igrač' : (v.isOnAI ? 'AI' : 'Nije');
+  const controlledText = v.isControlled ? 'IgraÃ„Â' : (v.isOnAI ? 'AI' : 'Nije');
 
   const playerName = v.playerName || 'Nepoznat';
   const farmName = v.farmName || `Farm ${v.farmId ?? '?'}`;
 
-  // 🔹 PRVA LINIJA – sve u jednom redu:
+  // Ã°Å¸â€Â¹ PRVA LINIJA Ã¢â‚¬â€œ sve u jednom redu:
   // "CLAAS TRION 750 | 8 km/h | F112 | 54% Corn"
   const summaryLine =
     `${emoji} ${v.vehicleName || 'Vozilo'} | ` +
     `${speed} | ` +
     `${fieldText} | ` +
-    `📦 ${fillLine}`;
+    `Ã°Å¸â€œÂ¦ ${fillLine}`;
 
   const embed = new EmbedBuilder()
     .setTitle(`FS25 TELEMETRY | ${mapName}`)
@@ -1223,7 +1255,7 @@ function createTelemetryEmbed(telemetry) {
         value: [
           `**Naziv:** ${v.vehicleName || 'Nepoznato'}`,
           `**Tip:** ${v.typeName || '-'}`,
-          `**Igrač:** ${playerName}`,
+          `**IgraÃ„Â:** ${playerName}`,
           `**Farma:** ${farmName}`,
         ].join('\n'),
         inline: false,
@@ -1240,7 +1272,7 @@ function createTelemetryEmbed(telemetry) {
         inline: true,
       },
       {
-        name: 'Gorivo 🛢️',
+        name: 'Gorivo Ã°Å¸â€ºÂ¢Ã¯Â¸Â',
         value: [
           `**${fuelType}:** ${fuelPercent}%`,
           fuelBar,
@@ -1249,16 +1281,16 @@ function createTelemetryEmbed(telemetry) {
         inline: true,
       },
       {
-        name: 'Šteta',
+        name: 'Ã…Â teta',
         value: [
           `**Stanje:** ${damagePercent}%`,
           damageBar,
-          v.damage?.isBroken ? '⚠️ **Vozilo je pokvareno!**' : '',
+          v.damage?.isBroken ? 'Ã¢Å¡Â Ã¯Â¸Â **Vozilo je pokvareno!**' : '',
         ].filter(Boolean).join('\n'),
         inline: true,
       },
       {
-        name: 'Spremnici 📦',
+        name: 'Spremnici Ã°Å¸â€œÂ¦',
         value: fill
           ? [
               `**${fillTitle}:** ${fillPercent}%`,
@@ -1269,7 +1301,7 @@ function createTelemetryEmbed(telemetry) {
         inline: false,
       },
       {
-        name: 'Pozicija 🧭',
+        name: 'Pozicija Ã°Å¸Â§Â­',
         value: [
           `X: ${v.worldPosition?.x?.toFixed(1) ?? '-'}`,
           `Z: ${v.worldPosition?.z?.toFixed(1) ?? '-'}`,
@@ -1280,25 +1312,25 @@ function createTelemetryEmbed(telemetry) {
       },
     )
     .setFooter({
-      text: `${telemetry.modName || 'FS25_DiscordBridge'} • ${new Date().toLocaleString('hr-HR')}`,
+      text: `${telemetry.modName || 'FS25_DiscordBridge'} Ã¢â‚¬Â¢ ${new Date().toLocaleString('hr-HR')}`,
     });
 
   return embed;
 }
 
 // =====================
-//  FS WEBHOOK – test ruta
+//  FS WEBHOOK Ã¢â‚¬â€œ test ruta
 // =====================
 app.post('/fs/test', (req, res) => {
   if (!checkFsSecret(req, res)) return;
 
-  console.log('🔗 [FS TEST] Primljen payload:', req.body);
+  console.log('Ã°Å¸â€â€” [FS TEST] Primljen payload:', req.body);
 
   res.json({ ok: true, received: req.body });
 });
 
 // =====================
-//  FS WEBHOOK – TELEMETRY -> DISCORD EMBED
+//  FS WEBHOOK Ã¢â‚¬â€œ TELEMETRY -> DISCORD EMBED
 // =====================
 app.post('/fs/telemetry', async (req, res) => {
   if (!checkFsSecret(req, res)) return;
@@ -1309,7 +1341,7 @@ app.post('/fs/telemetry', async (req, res) => {
   try {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) {
-      console.warn('⚠️ /fs/telemetry: guild nije učitan.');
+      console.warn('Ã¢Å¡Â Ã¯Â¸Â /fs/telemetry: guild nije uÃ„Âitan.');
       return res.status(500).json({ ok: false, error: 'guild_not_loaded' });
     }
 
@@ -1318,7 +1350,7 @@ app.post('/fs/telemetry', async (req, res) => {
       .catch(() => null);
 
     if (!channel) {
-      console.warn('⚠️ /fs/telemetry: kanal za telemetriju nije podešen.');
+      console.warn('Ã¢Å¡Â Ã¯Â¸Â /fs/telemetry: kanal za telemetriju nije podeÃ…Â¡en.');
       return res
         .status(500)
         .json({ ok: false, error: 'telemetry_channel_not_configured' });
@@ -1328,19 +1360,19 @@ app.post('/fs/telemetry', async (req, res) => {
       ? telemetry.vehicles
       : [];
 
-    // Ako nema vozila – simple embed
+    // Ako nema vozila Ã¢â‚¬â€œ simple embed
     if (vehicles.length === 0) {
       const embed = new EmbedBuilder()
         .setColor(0x2f3136)
         .setTitle('FS25 TELEMETRY')
-        .setDescription('Nije pronađen nijedan aktivni stroj u telemetriji.')
+        .setDescription('Nije pronaÃ„â€˜en nijedan aktivni stroj u telemetriji.')
         .setTimestamp(new Date());
 
       await channel.send({ embeds: [embed] });
       return res.json({ ok: true, sent: true, vehicles: 0 });
     }
 
-    // Inače koristimo naš fancy helper s emoji + progress barovima
+    // InaÃ„Âe koristimo naÃ…Â¡ fancy helper s emoji + progress barovima
     const embed = createTelemetryEmbed(telemetry);
     await channel.send({ embeds: [embed] });
 
@@ -1350,7 +1382,7 @@ app.post('/fs/telemetry', async (req, res) => {
       vehicles: vehicles.length,
     });
   } catch (err) {
-    console.error('❌ Greška u /fs/telemetry:', err);
+    console.error('Ã¢ÂÅ’ GreÃ…Â¡ka u /fs/telemetry:', err);
     return res.status(500).json({ ok: false, error: 'internal_error' });
   }
 });
@@ -1359,7 +1391,7 @@ app.post('/fs/telemetry', async (req, res) => {
 
 
 // =====================
-//  FS – pomoćne funkcije za zadatke (DB)
+//  FS Ã¢â‚¬â€œ pomoÃ„â€¡ne funkcije za zadatke (DB)
 // =====================
 
 // spremi / update jednog zadatka u db.json
@@ -1367,7 +1399,7 @@ function saveFarmingTask(record) {
   const data = loadDb();
   if (!Array.isArray(data.farmingTasks)) data.farmingTasks = [];
 
-  // ako već postoji isti messageId → update
+  // ako veÃ„â€¡ postoji isti messageId Ã¢â€ â€™ update
   const idx = data.farmingTasks.findIndex(
     (t) => t.messageId === record.messageId
   );
@@ -1381,12 +1413,12 @@ function saveFarmingTask(record) {
   saveDb(data);
 }
 
-// pronađi zadatak po polju koji je još "open"
+// pronaÃ„â€˜i zadatak po polju koji je joÃ…Â¡ "open"
 function findOpenTaskByField(field) {
   const data = loadDb();
   if (!Array.isArray(data.farmingTasks)) return null;
 
-  // tražimo od kraja (najnoviji)
+  // traÃ…Â¾imo od kraja (najnoviji)
   for (let i = data.farmingTasks.length - 1; i >= 0; i--) {
     const t = data.farmingTasks[i];
     if (t.field === field && t.status === 'open') return t;
@@ -1394,8 +1426,8 @@ function findOpenTaskByField(field) {
   return null;
 }
 
-// označi zadatak kao završen + prebaci embed u "završene poslove"
-// ili kreiraj novi završen zadatak ako ne postoji
+// oznaÃ„Âi zadatak kao zavrÃ…Â¡en + prebaci embed u "zavrÃ…Â¡ene poslove"
+// ili kreiraj novi zavrÃ…Â¡en zadatak ako ne postoji
 async function finishTaskFromFsUpdate(field, payload) {
   const task = findOpenTaskByField(field);
   const finishedBy = payload.player || 'FS Server';
@@ -1421,11 +1453,11 @@ async function finishTaskFromFsUpdate(field, payload) {
 
     const embed = new EmbedBuilder()
       .setColor('#ff0000')
-      .setTitle('✅ Zadatak (auto iz FS)')
+      .setTitle('Ã¢Å“â€¦ Zadatak (auto iz FS)')
       .addFields(
         { name: 'Polje', value: `Polje ${field}`, inline: true },
         { name: 'Posao', value: jobName, inline: true },
-        { name: 'Završio', value: finishedBy, inline: true }
+        { name: 'ZavrÃ…Â¡io', value: finishedBy, inline: true }
       )
       .setTimestamp();
 
@@ -1445,13 +1477,13 @@ async function finishTaskFromFsUpdate(field, payload) {
     });
 
     console.log(
-      `✅ FS: Nije pronađen aktivni zadatak za polje ${field}, kreiran novi "završen" zadatak.`
+      `Ã¢Å“â€¦ FS: Nije pronaÃ„â€˜en aktivni zadatak za polje ${field}, kreiran novi "zavrÃ…Â¡en" zadatak.`
     );
 
     return true;
   }
 
-  // imamo otvoreni zadatak u kanalu za poslove → dohvatimo stari embed
+  // imamo otvoreni zadatak u kanalu za poslove Ã¢â€ â€™ dohvatimo stari embed
   const msg = await jobChannel.messages
     .fetch(task.messageId)
     .catch(() => null);
@@ -1461,9 +1493,9 @@ async function finishTaskFromFsUpdate(field, payload) {
 
   const finishedEmbed = EmbedBuilder.from(oldEmbed)
     .setColor('#ff0000')
-    .setTitle('✅ Zadatak završen (FS)')
+    .setTitle('Ã¢Å“â€¦ Zadatak zavrÃ…Â¡en (FS)')
     .setFooter({
-      text: 'Označeno kao završeno od strane: ' + finishedBy,
+      text: 'OznaÃ„Âeno kao zavrÃ…Â¡eno od strane: ' + finishedBy,
     })
     .setTimestamp();
 
@@ -1484,14 +1516,14 @@ async function finishTaskFromFsUpdate(field, payload) {
   }
 
   console.log(
-    `✅ FS: Zadatak za polje ${field} automatski označen kao završen.`
+    `Ã¢Å“â€¦ FS: Zadatak za polje ${field} automatski oznaÃ„Âen kao zavrÃ…Â¡en.`
   );
 
   return true;
 }
 
 // =====================
-//  FS WEBHOOK – field update (auto završavanje posla)
+//  FS WEBHOOK Ã¢â‚¬â€œ field update (auto zavrÃ…Â¡avanje posla)
 // =====================
 app.post('/fs/field-update', async (req, res) => {
   if (!checkFsSecret(req, res)) return;
@@ -1500,7 +1532,7 @@ app.post('/fs/field-update', async (req, res) => {
   const field = String(payload.field || '').trim();
   const status = String(payload.status || '').toLowerCase();
 
-  console.log('🌾 [FS FIELD UPDATE]', payload);
+  console.log('Ã°Å¸Å’Â¾ [FS FIELD UPDATE]', payload);
 
   if (!field) {
     return res.status(400).json({ ok: false, error: 'missing_field' });
@@ -1521,7 +1553,7 @@ app.post('/fs/field-update', async (req, res) => {
       });
     }
 
-    // 🌾 Ako FS završi posao koji je sijanje, zabilježi ga u sezoni
+    // Ã°Å¸Å’Â¾ Ako FS zavrÃ…Â¡i posao koji je sijanje, zabiljeÃ…Â¾i ga u sezoni
 try {
   const crop = payload.crop || payload.seed || null;
 
@@ -1532,20 +1564,20 @@ try {
     }
   }
 } catch (e) {
-  console.log("⚠️ Greška pri upisu FS sjetve u sezonu:", e);
+  console.log("Ã¢Å¡Â Ã¯Â¸Â GreÃ…Â¡ka pri upisu FS sjetve u sezonu:", e);
 }
 
 
     return res.json({ ok: true, finished: true });
   } catch (err) {
-    console.error('❌ Greška u /fs/field-update:', err);
+    console.error('Ã¢ÂÅ’ GreÃ…Â¡ka u /fs/field-update:', err);
     return res.status(500).json({ ok: false, error: 'internal_error' });
   }
 });
 
 initMySql().finally(() => {
   app.listen(PORT, () => {
-    console.log(`🌐 Dashboard listening on port ${PORT}`);
+    console.log(`Ã°Å¸Å’Â Dashboard listening on port ${PORT}`);
   });
 });
 
@@ -1553,19 +1585,19 @@ initMySql().finally(() => {
 //  DISCORD BOT DIO
 // =====================
 
-// ❗ kategorija gdje idu tiketi (default, može se override-ati u dashboardu)
+// Ã¢Ââ€” kategorija gdje idu tiketi (default, moÃ…Â¾e se override-ati u dashboardu)
 const TICKET_CATEGORY_ID = '1437220354992115912';
 
-// ❗ kanal gdje ide TRANSKRIPT zatvorenih tiketa  (default, može se override-ati u dashboardu)
+// Ã¢Ââ€” kanal gdje ide TRANSKRIPT zatvorenih tiketa  (default, moÃ…Â¾e se override-ati u dashboardu)
 const TICKET_LOG_CHANNEL_ID = '1437218054718095410';
 
-// ❗ kanal gdje idu AKTIVNI FARMING poslovi (npr. #posao-na-farmi)
+// Ã¢Ââ€” kanal gdje idu AKTIVNI FARMING poslovi (npr. #posao-na-farmi)
 const FS_JOB_CHANNEL_ID = '1442984129699254292';
 
-// ❗ kanal gdje idu ZAVRŠENI poslovi (npr. #zavrseni-poslovi)
+// Ã¢Ââ€” kanal gdje idu ZAVRÃ…Â ENI poslovi (npr. #zavrseni-poslovi)
 const FS_JOB_DONE_CHANNEL_ID = '1442951254287454399';
 
-// ❗ kanal gdje idu FS25 TELEMETRY logovi (embed s vozilom)
+// Ã¢Ââ€” kanal gdje idu FS25 TELEMETRY logovi (embed s vozilom)
 const FS_TELEMETRY_CHANNEL_ID = process.env.FS_TELEMETRY_CHANNEL_ID || '';
 
 async function sendBlacklistLog(guild, options) {
@@ -1630,7 +1662,7 @@ function formatBlacklistLogEmbedFromText(content) {
   const userId = extractId(details.korisnik);
   const actorId = extractId(details.dodao || details.maknuo);
   const actorLabel = isRemove ? 'Maknuo' : 'Dodao';
-  const actionEmoji = isRemove ? '✅' : '⛔';
+  const actionEmoji = isRemove ? 'Ã¢Å“â€¦' : 'Ã¢â€ºâ€';
 
   const userDisplay = userId ? `<@${userId}>` : (details.korisnik || '-');
   const actorDisplay = actorId
@@ -1639,12 +1671,12 @@ function formatBlacklistLogEmbedFromText(content) {
 
   const fields = [
     {
-      name: '👤 Korisnik',
+      name: 'Ã°Å¸â€˜Â¤ Korisnik',
       value: `${userDisplay}\n\`${userId || details.korisnik || '-'}\``,
       inline: true,
     },
     {
-      name: `🛡️ ${actorLabel}`,
+      name: `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${actorLabel}`,
       value: `${actorDisplay}\n\`${actorId || details.dodao || details.maknuo || '-'}\``,
       inline: true,
     },
@@ -1652,13 +1684,13 @@ function formatBlacklistLogEmbedFromText(content) {
 
   if (details.razlog) {
     fields.push({
-      name: '📝 Razlog',
+      name: 'Ã°Å¸â€œÂ Razlog',
       value: details.razlog,
       inline: false,
     });
   } else if (!isRemove) {
     fields.push({
-      name: '📝 Razlog',
+      name: 'Ã°Å¸â€œÂ Razlog',
       value: '[prazno]',
       inline: false,
     });
@@ -1668,7 +1700,7 @@ function formatBlacklistLogEmbedFromText(content) {
     color,
     title: `${actionEmoji} ${title}`,
     fields,
-    footerText: `User ID: ${userId || '-'} • ${new Date().toLocaleString('hr-HR')}`,
+    footerText: `User ID: ${userId || '-'} Ã¢â‚¬Â¢ ${new Date().toLocaleString('hr-HR')}`,
   };
 }
 
@@ -1731,7 +1763,7 @@ async function registerApplicationCommands() {
   }
 }
 
-console.log('▶ Pokrećem bota...');
+console.log('Ã¢â€“Â¶ PokreÃ„â€¡em bota...');
 
 const client = new Client({
   intents: [
@@ -1742,24 +1774,24 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-  console.log(`✅ Bot je online kao ${client.user.tag}`);
+  console.log(`Ã¢Å“â€¦ Bot je online kao ${client.user.tag}`);
 
-  // 🌾 AUTOMATSKO OBNAVLJANJE SEZONE SJETVE PRI STARTU BOTA
+  // Ã°Å¸Å’Â¾ AUTOMATSKO OBNAVLJANJE SEZONE SJETVE PRI STARTU BOTA
   try {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (guild) {
       await updateSeasonEmbed(guild);
-      console.log("🌾 Sezona Sjetve — embed obnovljen pri startu bota.");
+      console.log("Ã°Å¸Å’Â¾ Sezona Sjetve Ã¢â‚¬â€ embed obnovljen pri startu bota.");
     }
   } catch (err) {
-    console.log("⚠️ Greška pri obnavljanju Sezone Sjetve:", err);
+    console.log("Ã¢Å¡Â Ã¯Â¸Â GreÃ…Â¡ka pri obnavljanju Sezone Sjetve:", err);
   }
   await registerApplicationCommands();
 });
 
 
 client.on('error', (err) => {
-  console.error('❌ Client error:', err);
+  console.error('Ã¢ÂÅ’ Client error:', err);
 });
 
 // === helperi za reminder ===
@@ -1796,7 +1828,7 @@ function startTicketReminder(channel, userId) {
 
       await ch.send({ content: text });
     } catch (err) {
-      console.error('Greška pri slanju ticket remindera:', err);
+      console.error('GreÃ…Â¡ka pri slanju ticket remindera:', err);
     }
   }, intervalMs);
 
@@ -1826,7 +1858,7 @@ function startTicketInactivity(channel) {
         return;
       }
 
-      // ako je već ručno zatvoren
+      // ako je veÃ„â€¡ ruÃ„Âno zatvoren
       if (ch.name.startsWith('closed-')) {
         stopTicketInactivity(channel.id);
         return;
@@ -1847,7 +1879,7 @@ function startTicketInactivity(channel) {
         await ch.setName(`closed-${ch.name}`).catch(() => {});
       }
 
-      // zaključaj permisije
+      // zakljuÃ„Âaj permisije
       await ch.permissionOverwrites
         .edit(guild.roles.everyone, {
           SendMessages: false,
@@ -1882,7 +1914,7 @@ function startTicketInactivity(channel) {
         })
         .catch(() => {});
 
-      // pošalji transkript (bot kao "zatvorio")
+      // poÃ…Â¡alji transkript (bot kao "zatvorio")
       const transcriptText = await sendTicketTranscript(ch, ch.client.user);
 
       await upsertTicketRecord({
@@ -1905,12 +1937,12 @@ function startTicketInactivity(channel) {
       // ugasi i reminder ako postoji
       stopTicketReminder(ch.id);
 
-      // obriši kanal nakon 10 sekundi
+      // obriÃ…Â¡i kanal nakon 10 sekundi
       setTimeout(() => {
         ch.delete().catch(() => {});
       }, 10_000);
     } catch (err) {
-      console.error('Greška u auto-close tiketa:', err);
+      console.error('GreÃ…Â¡ka u auto-close tiketa:', err);
     } finally {
       stopTicketInactivity(channel.id);
     }
@@ -1941,7 +1973,7 @@ function buildPomocTicketModal(typeCfg) {
 
   const modal = new ModalBuilder()
     .setCustomId('ticket_answers:pomoc')
-    .setTitle(typeCfg?.title || 'Pomoć');
+    .setTitle(typeCfg?.title || 'PomoÃ„â€¡');
 
   const questionRows = questions.map((question, index) =>
     new ActionRowBuilder().addComponents(
@@ -1968,27 +2000,27 @@ function buildTicketCategoryRow() {
         label: 'Igranje na serveru',
         description: 'Godine + svako pitanje zasebno u istom modalu.',
         value: 'igranje',
-        emoji: '🎮',
+        emoji: 'Ã°Å¸Å½Â®',
       },
       {
-        label: 'Žalba na igrače',
-        description: 'Prijavi igrača koji krši pravila servera.',
+        label: 'Ã…Â½alba na igraÃ„Âe',
+        description: 'Prijavi igraÃ„Âa koji krÃ…Â¡i pravila servera.',
         value: 'zalba',
-        emoji: '⚠️',
+        emoji: 'Ã¢Å¡Â Ã¯Â¸Â',
       },
       {
         label: 'Edit modova',
-        description: 'Ako trebaš pomoć ili savjet oko edita modova.',
+        description: 'Ako trebaÃ…Â¡ pomoÃ„â€¡ ili savjet oko edita modova.',
         value: 'modovi',
-        emoji: '🧩',
+        emoji: 'Ã°Å¸Â§Â©',
       }
     );
 
   menu.addOptions({
-    label: 'Pomoć',
+    label: 'PomoÃ„â€¡',
     description: 'Pitanje ili problem za admin tim.',
     value: 'pomoc',
-    emoji: '🛠️',
+    emoji: 'Ã°Å¸â€ºÂ Ã¯Â¸Â',
   });
 
   return new ActionRowBuilder().addComponents(menu);
@@ -2007,7 +2039,7 @@ function buildTicketQuestionModal(type, typeCfg) {
     new TextInputBuilder()
       .setCustomId('age')
       .setLabel('Koliko imas godina?')
-      .setPlaceholder('Upiši svoje godine.')
+      .setPlaceholder('UpiÃ…Â¡i svoje godine.')
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setMinLength(1)
@@ -2226,74 +2258,35 @@ async function upsertTicketRecord({
 async function sendIgranjeWelcomeEmbeds(channel) {
   if (!channel) return;
 
-  const launcherChannelId = '1481028377489047613';
+  const cfg = getTicketConfig();
+  const launcherChannelId = cfg.launcherChannelId || DEFAULT_TICKET_SYSTEM.launcherChannelId;
+  const launcherChannelMention = launcherChannelId ? `<#${launcherChannelId}>` : '#launcher';
   const footerIcon =
     channel.guild.iconURL?.({ extension: 'png', size: 128 }) || null;
   const footerText = channel.guild.name || 'Slavonska Ravnica';
+  const replacePlaceholders = (text) =>
+    String(text || '')
+      .replace(/\{launcherChannel\}/g, launcherChannelMention)
+      .replace(/\{guildName\}/g, channel.guild.name || 'Slavonska Ravnica');
 
   const welcomeEmbed = new EmbedBuilder()
     .setColor('#39d353')
-    .setTitle('🚜 Dobrodošao/la na Slavonsku Ravnicu!')
-    .setDescription(
-      [
-        'Bok i dobrodošao na Slavonsku Ravnicu! 🚜',
-        'Ticket ti je prošao i primljen/a si na server.',
-        '',
-        `Za ulazak u igru idi u kanal <#${launcherChannelId}> i tamo skini naš launcher jer unutra ti sve piše i to je glavni način za ulazak na server.`,
-        '',
-        'Ako želiš, modove možeš dodati i ručno preko ovog linka:',
-        'http://176.57.169.250:8620/mods.html?lang=en',
-        '',
-        'Samo imaj na umu da će se sva buduća ažuriranja prikazivati isključivo kroz launcher, tako da više nećemo posebno lijepiti linkove za nove ili ažurirane modove. Zato ti je launcher ubuduće glavno mjesto za sve updateove.',
-        '',
-        'Ako ti bilo što zapne oko instalacije, modova ili ulaska u igru, slobodno se javi.',
-        'Vidimo se na farmi. 🌾',
-      ].join('\n')
-    )
+    .setTitle(cfg.messages?.igranjeWelcomeTitle || DEFAULT_TICKET_SYSTEM.messages.igranjeWelcomeTitle)
+    .setDescription(replacePlaceholders(cfg.messages?.igranjeWelcomeBody || DEFAULT_TICKET_SYSTEM.messages.igranjeWelcomeBody))
     .setFooter(footerIcon ? { text: footerText, iconURL: footerIcon } : { text: footerText })
     .setTimestamp();
 
   const rulesEmbed = new EmbedBuilder()
     .setColor('#ff5c5c')
-    .setTitle('📜 Pravila servera')
-    .setDescription(
-      [
-        'Molimo te da pročitaš pravila servera prije početka igre.',
-        '',
-        '• Poštuj sve igrače na serveru',
-        '• Zabranjeno je uništavanje tuđe imovine',
-        '• Ne ostavljaj vozila na cesti',
-        '• Koristi samo svoja polja i farmu',
-        '• Exploit/cheat = trajni ban',
-        '• Slušaj upute admina i moderatora',
-        '',
-        'Kršenje pravila rezultira opomenom, kickom ili banom. ⚠️',
-      ].join('\n')
-    )
+    .setTitle(cfg.messages?.igranjeRulesTitle || DEFAULT_TICKET_SYSTEM.messages.igranjeRulesTitle)
+    .setDescription(replacePlaceholders(cfg.messages?.igranjeRulesBody || DEFAULT_TICKET_SYSTEM.messages.igranjeRulesBody))
     .setFooter(footerIcon ? { text: footerText, iconURL: footerIcon } : { text: footerText })
     .setTimestamp();
 
   const launcherEmbed = new EmbedBuilder()
     .setColor('#4f86ff')
-    .setTitle('📥 Launcher -- preuzimanje i instalacija')
-    .setDescription(
-      [
-        'Naš launcher je glavni način za ulazak na server.',
-        '',
-        '**Gdje preuzeti?**',
-        `Idi u kanal <#${launcherChannelId}> i preuzmi launcher.`,
-        '',
-        '**Kako radi?**',
-        '• Pokreni launcher',
-        '• Automatski će preuzeti sve potrebne modove',
-        '• Klikni "Play" i igra te prebacuje na server',
-        '',
-        '**Problemi?**',
-        '• Pokreni launcher kao Administrator',
-        '• Provjeri da ti antivirus ne blokira',
-        '• Ako ništa ne pomaže, javi se u support kanal',
-      ].join('\n')
-    )
+    .setTitle(cfg.messages?.igranjeLauncherTitle || DEFAULT_TICKET_SYSTEM.messages.igranjeLauncherTitle)
+    .setDescription(replacePlaceholders(cfg.messages?.igranjeLauncherBody || DEFAULT_TICKET_SYSTEM.messages.igranjeLauncherBody))
     .setFooter(footerIcon ? { text: footerText, iconURL: footerIcon } : { text: footerText })
     .setTimestamp();
 
@@ -2527,14 +2520,14 @@ client.on('guildMemberAdd', async (member) => {
       if (blacklistEntry) {
         logCh
           .send(
-            `⛔ Blacklist korisnik se vratio: ${member.user.tag} (ID: ${member.id})` +
+            `Ã¢â€ºâ€ Blacklist korisnik se vratio: ${member.user.tag} (ID: ${member.id})` +
               (blacklistEntry.reason ? ` | Razlog: ${blacklistEntry.reason}` : '')
           )
           .catch(() => {});
         return;
       }
       logCh
-        .send(`✅ Novi član: ${member.user.tag} (ID: ${member.id})`)
+        .send(`Ã¢Å“â€¦ Novi Ã„Âlan: ${member.user.tag} (ID: ${member.id})`)
         .catch(() => {});
     }
   }
@@ -2546,12 +2539,12 @@ client.on('messageCreate', (message) => {
 
   const channel = message.channel;
 
-  // ako je ovo tiket koji pratimo za inactivity → reset Xh timera
+  // ako je ovo tiket koji pratimo za inactivity Ã¢â€ â€™ reset Xh timera
   if (ticketInactivity.has(channel.id)) {
     startTicketInactivity(channel);
   }
 
-  // ako nema reminder za ovaj kanal, dalje nas ništa ne zanima
+  // ako nema reminder za ovaj kanal, dalje nas niÃ…Â¡ta ne zanima
   if (!ticketReminders.has(channel.id)) return;
 
   const topic = channel.topic || '';
@@ -2561,7 +2554,7 @@ client.on('messageCreate', (message) => {
   if (!ticketOwnerId) return;
   if (message.author.id !== ticketOwnerId) return;
 
-  // vlasnik tiketa je odgovorio → zaustavi reminder
+  // vlasnik tiketa je odgovorio Ã¢â€ â€™ zaustavi reminder
   stopTicketReminder(channel.id);
 });
 
@@ -2575,24 +2568,24 @@ client.on('interactionCreate', async (interaction) => {
         .setColor('#ffd000')
         .setTitle('Ticket system')
         .setDescription(
-          'Molimo vas da pažljivo pročitate ovu poruku prije nego što otvorite tiket.\n\n' +
+          'Molimo vas da paÃ…Â¾ljivo proÃ„Âitate ovu poruku prije nego Ã…Â¡to otvorite tiket.\n\n' +
             '**Opcije:**\n' +
-            '• **Igranje na serveru:** Zahtjev za pridruživanjem serveru.\n' +
-            '• **Žalba na igrače:** Prijava igrača koji krši pravila servera.\n' +
-            '• **Edit modova:** Pomoć, ideje ili problemi vezani uz edit modova.\n' +
-            '• **Pomoć:** Pitanja ili problemi za admin tim.\n\n' +
+            'Ã¢â‚¬Â¢ **Igranje na serveru:** Zahtjev za pridruÃ…Â¾ivanjem serveru.\n' +
+            'Ã¢â‚¬Â¢ **Ã…Â½alba na igraÃ„Âe:** Prijava igraÃ„Âa koji krÃ…Â¡i pravila servera.\n' +
+            'Ã¢â‚¬Â¢ **Edit modova:** PomoÃ„â€¡, ideje ili problemi vezani uz edit modova.\n' +
+            'Ã¢â‚¬Â¢ **PomoÃ„â€¡:** Pitanja ili problemi za admin tim.\n\n' +
             'Prije otvaranja tiketa\n' +
             '1. Provjerite jeste li sve instalirali i podesili prema uputama.\n' +
-            '2. Pokušajte sami riješiti problem i provjerite da nije do vaših modova ili klijenta.\n' +
-            '3. Ako ne uspijete, otvorite tiket i detaljno opišite svoj problem.\n' +
-            '4. Budite strpljivi, netko iz tima će vam se javiti čim bude moguće.\n\n' +
+            '2. PokuÃ…Â¡ajte sami rijeÃ…Â¡iti problem i provjerite da nije do vaÃ…Â¡ih modova ili klijenta.\n' +
+            '3. Ako ne uspijete, otvorite tiket i detaljno opiÃ…Â¡ite svoj problem.\n' +
+            '4. Budite strpljivi, netko iz tima Ã„â€¡e vam se javiti Ã„Âim bude moguÃ„â€¡e.\n\n' +
             'Pravila tiketa:\n' +
-            '• Svi problemi moraju biti jasno i detaljno opisani, bez poruka tipa "ne radi".\n' +
-            '• Poštujte članove staff tima.\n' +
-            '• Ne pingajte staff bez razloga, netko će vam se javiti.\n' +
-            '• Tiket bez odgovora korisnika 48h bit će zatvoren.\n' +
-            '• Ne otvarajte tikete u pogrešnoj kategoriji.\n' +
-            '• Kršenje pravila može rezultirati zatvaranjem tiketa ili sankcijama.'
+            'Ã¢â‚¬Â¢ Svi problemi moraju biti jasno i detaljno opisani, bez poruka tipa "ne radi".\n' +
+            'Ã¢â‚¬Â¢ PoÃ…Â¡tujte Ã„Âlanove staff tima.\n' +
+            'Ã¢â‚¬Â¢ Ne pingajte staff bez razloga, netko Ã„â€¡e vam se javiti.\n' +
+            'Ã¢â‚¬Â¢ Tiket bez odgovora korisnika 48h bit Ã„â€¡e zatvoren.\n' +
+            'Ã¢â‚¬Â¢ Ne otvarajte tikete u pogreÃ…Â¡noj kategoriji.\n' +
+            'Ã¢â‚¬Â¢ KrÃ…Â¡enje pravila moÃ…Â¾e rezultirati zatvaranjem tiketa ili sankcijama.'
         );
 
       const row = buildTicketCategoryRow();
@@ -2604,22 +2597,22 @@ client.on('interactionCreate', async (interaction) => {
       await channel.send({ embeds: [embed], components: [row] });
     }
 
-    // /task-panel – Farming zadaci
+    // /task-panel Ã¢â‚¬â€œ Farming zadaci
 if (interaction.commandName === 'task-panel') {
   const embed = new EmbedBuilder()
     .setColor('#ffd900')
-    .setTitle('🚜 Farming – Zadaci')
-    .setDescription('Odaberi što želiš kreirati.');
+    .setTitle('Ã°Å¸Å¡Å“ Farming Ã¢â‚¬â€œ Zadaci')
+    .setDescription('Odaberi Ã…Â¡to Ã…Â¾eliÃ…Â¡ kreirati.');
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('task_start')
-      .setLabel('➕ Kreiraj posao (polja)')
+      .setLabel('Ã¢Å¾â€¢ Kreiraj posao (polja)')
       .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
       .setCustomId('task_general_start')
-      .setLabel('📝 Kreiraj zadatak')
+      .setLabel('Ã°Å¸â€œÂ Kreiraj zadatak')
       .setStyle(ButtonStyle.Primary)
   );
 
@@ -2637,7 +2630,7 @@ if (interaction.commandName === 'task-panel') {
     if (interaction.commandName === 'add-field') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
-          content: '⛔ Samo staff/admin može dodavati nova polja.',
+          content: 'Ã¢â€ºâ€ Samo staff/admin moÃ…Â¾e dodavati nova polja.',
           ephemeral: true,
         });
       }
@@ -2646,7 +2639,7 @@ if (interaction.commandName === 'task-panel') {
 
       if (!value) {
         return interaction.reply({
-          content: '⚠️ Moraš upisati oznaku polja (npr. `56-276`).',
+          content: 'Ã¢Å¡Â Ã¯Â¸Â MoraÃ…Â¡ upisati oznaku polja (npr. `56-276`).',
           ephemeral: true,
         });
       }
@@ -2654,7 +2647,7 @@ if (interaction.commandName === 'task-panel') {
       const fields = getFarmingFields();
       if (fields.includes(value)) {
         return interaction.reply({
-          content: `⚠️ Polje **${value}** već postoji u listi.`,
+          content: `Ã¢Å¡Â Ã¯Â¸Â Polje **${value}** veÃ„â€¡ postoji u listi.`,
           ephemeral: true,
         });
       }
@@ -2663,7 +2656,7 @@ if (interaction.commandName === 'task-panel') {
       saveFarmingFields(fields);
 
       return interaction.reply({
-        content: `✅ Polje **${value}** je dodano u listu. Dostupno je u task-panelu.`,
+        content: `Ã¢Å“â€¦ Polje **${value}** je dodano u listu. Dostupno je u task-panelu.`,
         ephemeral: true,
       });
     }
@@ -2672,7 +2665,7 @@ if (interaction.commandName === 'task-panel') {
     if (interaction.commandName === 'remove-field') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
-          content: '⛔ Samo staff/admin može brisati polja.',
+          content: 'Ã¢â€ºâ€ Samo staff/admin moÃ…Â¾e brisati polja.',
           ephemeral: true,
         });
       }
@@ -2683,7 +2676,7 @@ if (interaction.commandName === 'task-panel') {
 
       if (index === -1) {
         return interaction.reply({
-          content: `⚠️ Polje **${value}** nije pronađeno u listi.`,
+          content: `Ã¢Å¡Â Ã¯Â¸Â Polje **${value}** nije pronaÃ„â€˜eno u listi.`,
           ephemeral: true,
         });
       }
@@ -2692,7 +2685,7 @@ if (interaction.commandName === 'task-panel') {
       saveFarmingFields(fields);
 
       return interaction.reply({
-        content: `🗑️ Polje **${value}** je uklonjeno iz liste.`,
+        content: `Ã°Å¸â€”â€˜Ã¯Â¸Â Polje **${value}** je uklonjeno iz liste.`,
         ephemeral: true,
       });
     }
@@ -2710,17 +2703,17 @@ if (interaction.commandName === 'task-panel') {
 
       return interaction.reply({
         content:
-          '📋 Trenutna polja za Farming zadatke:\n' +
-          fields.map((f) => `• ${f}`).join('\n'),
+          'Ã°Å¸â€œâ€¹ Trenutna polja za Farming zadatke:\n' +
+          fields.map((f) => `Ã¢â‚¬Â¢ ${f}`).join('\n'),
         ephemeral: true,
       });
     }
 
-    // /field-panel – poruka s gumbom za dodavanje polja
+    // /field-panel Ã¢â‚¬â€œ poruka s gumbom za dodavanje polja
     if (interaction.commandName === 'field-panel') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
-          content: '⛔ Samo staff/admin može postaviti ovaj panel.',
+          content: 'Ã¢â€ºâ€ Samo staff/admin moÃ…Â¾e postaviti ovaj panel.',
           ephemeral: true,
         });
       }
@@ -2728,28 +2721,28 @@ if (interaction.commandName === 'task-panel') {
 
       const embed = new EmbedBuilder()
         .setColor('#3ba55d')
-        .setTitle('🧑‍🌾 Upravljanje poljima')
+        .setTitle('Ã°Å¸Â§â€˜Ã¢â‚¬ÂÃ°Å¸Å’Â¾ Upravljanje poljima')
         .setDescription(
-          'Ovdje možeš dodati nova polja za Farming zadatke.\n\n' +
-          'Klikni na gumb ispod, unesi oznaku polja (npr. `56-276`) i bot će ga spremiti.\n' +
+          'Ovdje moÃ…Â¾eÃ…Â¡ dodati nova polja za Farming zadatke.\n\n' +
+          'Klikni na gumb ispod, unesi oznaku polja (npr. `56-276`) i bot Ã„â€¡e ga spremiti.\n' +
           'Ta polja se automatski koriste u **task-panel** sistemu.'
         );
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('field_add_button')
-          .setLabel('➕ Dodaj novo polje')
+          .setLabel('Ã¢Å¾â€¢ Dodaj novo polje')
           .setStyle(ButtonStyle.Success)
       );
 
       await interaction.reply({ embeds: [embed], components: [row] });
     }
 
-    // /reset-season – resetira aktivnu sezonu sjetve
+    // /reset-season Ã¢â‚¬â€œ resetira aktivnu sezonu sjetve
     if (interaction.commandName === 'blacklist') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
-          content: 'â›” Samo staff/admin moÅ¾e dodavati korisnike na ticket blacklistu.',
+          content: 'ÃƒÂ¢Ã¢â‚¬ÂºÃ¢â‚¬Â Samo staff/admin moÃƒâ€¦Ã‚Â¾e dodavati korisnike na ticket blacklistu.',
           ephemeral: true,
         });
       }
@@ -2775,7 +2768,7 @@ if (interaction.commandName === 'task-panel') {
       await sendBlacklistLog(
         interaction.guild,
         [
-          '⛔ Korisnik dodan na ticket blacklistu',
+          'Ã¢â€ºâ€ Korisnik dodan na ticket blacklistu',
           `Korisnik: ${targetUser.tag} (${targetUser.id})`,
           `Dodao: ${interaction.user.tag} (${interaction.user.id})`,
           entry.reason ? `Razlog: ${entry.reason}` : null,
@@ -2784,7 +2777,7 @@ if (interaction.commandName === 'task-panel') {
 
       return interaction.reply({
         content:
-          `⛔ <@${targetUser.id}> je dodan na ticket blacklistu i vise ne moze otvarati tickete.` +
+          `Ã¢â€ºâ€ <@${targetUser.id}> je dodan na ticket blacklistu i vise ne moze otvarati tickete.` +
           (entry.reason ? `\nRazlog: ${entry.reason}` : ''),
         ephemeral: true,
       });
@@ -2793,7 +2786,7 @@ if (interaction.commandName === 'task-panel') {
     if (interaction.commandName === 'unblacklist') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
-          content: 'â›” Samo staff/admin moÅ¾e skidati korisnike s ticket blackliste.',
+          content: 'ÃƒÂ¢Ã¢â‚¬ÂºÃ¢â‚¬Â Samo staff/admin moÃƒâ€¦Ã‚Â¾e skidati korisnike s ticket blackliste.',
           ephemeral: true,
         });
       }
@@ -2816,7 +2809,7 @@ if (interaction.commandName === 'task-panel') {
         await sendBlacklistLog(
           interaction.guild,
           [
-            '✅ Korisnik maknut s ticket blackliste',
+            'Ã¢Å“â€¦ Korisnik maknut s ticket blackliste',
             `Korisnik: ${targetUser.tag} (${targetUser.id})`,
             `Maknuo: ${interaction.user.tag} (${interaction.user.id})`,
           ].join('\n')
@@ -2825,8 +2818,8 @@ if (interaction.commandName === 'task-panel') {
 
       return interaction.reply({
         content: removed
-          ? `✅ <@${targetUser.id}> je maknut s ticket blackliste i ponovno moze otvarati tickete.`
-          : `⚠️ <@${targetUser.id}> nije bio na ticket blackliste.`,
+          ? `Ã¢Å“â€¦ <@${targetUser.id}> je maknut s ticket blackliste i ponovno moze otvarati tickete.`
+          : `Ã¢Å¡Â Ã¯Â¸Â <@${targetUser.id}> nije bio na ticket blackliste.`,
         ephemeral: true,
       });
     }
@@ -2834,7 +2827,7 @@ if (interaction.commandName === 'task-panel') {
 if (interaction.commandName === 'reset-season') {
   if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
     return interaction.reply({
-      content: '⛔ Nemaš permisije za reset sezone.',
+      content: 'Ã¢â€ºâ€ NemaÃ…Â¡ permisije za reset sezone.',
       ephemeral: true,
     });
   }
@@ -2843,20 +2836,20 @@ if (interaction.commandName === 'reset-season') {
   const seasons = getSowingSeasons();
   const active = getActiveSeason();
 
-  // 1️⃣ Resetiramo polja
+  // 1Ã¯Â¸ÂÃ¢Æ’Â£ Resetiramo polja
   active.fields = {};
   active.completed = false;
 
-  // 2️⃣ Zapišemo nazad u DB
+  // 2Ã¯Â¸ÂÃ¢Æ’Â£ ZapiÃ…Â¡emo nazad u DB
   const index = seasons.findIndex(s => s.season === active.season);
   seasons[index] = active;
   saveSowingSeasons(seasons);
 
-  // 3️⃣ Očistimo embed totalno
+  // 3Ã¯Â¸ÂÃ¢Æ’Â£ OÃ„Âistimo embed totalno
   await updateSeasonEmbed(interaction.guild, true);
 
   return interaction.reply({
-    content: '🔄 Sezona resetirana! Živi embed je očišćen.',
+    content: 'Ã°Å¸â€â€ž Sezona resetirana! Ã…Â½ivi embed je oÃ„ÂiÃ…Â¡Ã„â€¡en.',
     ephemeral: true,
   });
 }
@@ -2866,18 +2859,18 @@ if (interaction.commandName === 'update-field') {
   // samo staff
   if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
     return interaction.reply({
-      content: '⛔ Samo staff može uređivati polja.',
+      content: 'Ã¢â€ºâ€ Samo staff moÃ…Â¾e ureÃ„â€˜ivati polja.',
       ephemeral: true,
     });
   }
 
   const modal = new ModalBuilder()
     .setCustomId('update_field_step1')
-    .setTitle('Uredi polje – Korak 1');
+    .setTitle('Uredi polje Ã¢â‚¬â€œ Korak 1');
 
   const input = new TextInputBuilder()
     .setCustomId('old_field')
-    .setLabel('Koje polje želiš editovati? (npr. 5)')
+    .setLabel('Koje polje Ã…Â¾eliÃ…Â¡ editovati? (npr. 5)')
     .setStyle(TextInputStyle.Short)
     .setRequired(true);
 
@@ -2907,7 +2900,7 @@ if (interaction.commandName === 'update-field') {
     if (blacklistEntry) {
       return interaction.reply({
         content:
-          '⛔ Trenutno ne mozes otvoriti ticket jer si na ticket blackliste.' +
+          'Ã¢â€ºâ€ Trenutno ne mozes otvoriti ticket jer si na ticket blackliste.' +
           (blacklistEntry.reason ? `\nRazlog: ${blacklistEntry.reason}` : ''),
         ephemeral: true,
       });
@@ -2918,7 +2911,7 @@ if (interaction.commandName === 'update-field') {
 
     if (!typeCfg) {
       return interaction.reply({
-        content: '⚠️ Odabrani ticket tip nije pronađen. Pokušaj ponovno.',
+        content: 'Ã¢Å¡Â Ã¯Â¸Â Odabrani ticket tip nije pronaÃ„â€˜en. PokuÃ…Â¡aj ponovno.',
         ephemeral: true,
       });
     }
@@ -2987,33 +2980,33 @@ if (interaction.commandName === 'update-field') {
       case 'igranje':
         if (typeCfg && typeCfg.questions?.length) {
           ticketMessage = [
-            `🎮 Zdravo <@${member.id}>, hvala što si otvorio **${typeCfg.title || 'Igranje na serveru'}** ticket.`,
+            `Ã°Å¸Å½Â® Zdravo <@${member.id}>, hvala Ã…Â¡to si otvorio **${typeCfg.title || 'Igranje na serveru'}** ticket.`,
             '',
-            '# 🧾 Evo da skratimo stvari i ubrzamo proces',
+            '# Ã°Å¸Â§Â¾ Evo da skratimo stvari i ubrzamo proces',
             '',
-            '**Odgovori na sljedeća pitanja:**',
+            '**Odgovori na sljedeÃ„â€¡a pitanja:**',
             '',
             ...typeCfg.questions.map((q) => `- ${q}`),
             '',
-            '🕹️ Kada odgovoriš na ova pitanja, neko iz tima će ti se ubrzo javiti.',
+            'Ã°Å¸â€¢Â¹Ã¯Â¸Â Kada odgovoriÃ…Â¡ na ova pitanja, neko iz tima Ã„â€¡e ti se ubrzo javiti.',
           ].join('\n');
         } else {
           ticketMessage = [
-            `🎮 Zdravo <@${member.id}>, hvala što si otvorio **Igranje na serveru** ticket.`,
+            `Ã°Å¸Å½Â® Zdravo <@${member.id}>, hvala Ã…Â¡to si otvorio **Igranje na serveru** ticket.`,
             '',
-            '# 🧾 Evo da skratimo stvari i ubrzamo proces',
+            '# Ã°Å¸Â§Â¾ Evo da skratimo stvari i ubrzamo proces',
             '',
-            '**Imaš par pitanja pa čisto da vlasnik ne gubi vrijeme kad preuzme ovaj tiket.**',
+            '**ImaÃ…Â¡ par pitanja pa Ã„Âisto da vlasnik ne gubi vrijeme kad preuzme ovaj tiket.**',
             '',
-            '- Koliko često planiraš da igraš na serveru? (npr. svakodnevno, par puta nedeljno...)',
-            '- U koje vrijeme si najčešće aktivan? (npr. popodne, uveče, vikendom...)',
-            '- Da li si spreman da poštuješ raspored i obaveze na farmi (npr. oranje, žetva, hranjenje stoke)?',
-            '- Kako bi reagovao ako neko iz tima ne poštuje dogovor ili pravila igre?',
-            '- Da li koristiš voice chat (Discord) tokom igre?',
-            '- Da li si spreman da pomogneš drugim igračima (npr. novim članovima tima)?',
-            '- Zašto želiš da igraš baš na hard serveru?',
+            '- Koliko Ã„Âesto planiraÃ…Â¡ da igraÃ…Â¡ na serveru? (npr. svakodnevno, par puta nedeljno...)',
+            '- U koje vrijeme si najÃ„ÂeÃ…Â¡Ã„â€¡e aktivan? (npr. popodne, uveÃ„Âe, vikendom...)',
+            '- Da li si spreman da poÃ…Â¡tujeÃ…Â¡ raspored i obaveze na farmi (npr. oranje, Ã…Â¾etva, hranjenje stoke)?',
+            '- Kako bi reagovao ako neko iz tima ne poÃ…Â¡tuje dogovor ili pravila igre?',
+            '- Da li koristiÃ…Â¡ voice chat (Discord) tokom igre?',
+            '- Da li si spreman da pomogneÃ…Â¡ drugim igraÃ„Âima (npr. novim Ã„Âlanovima tima)?',
+            '- ZaÃ…Â¡to Ã…Â¾eliÃ…Â¡ da igraÃ…Â¡ baÃ…Â¡ na hard serveru?',
             '',
-            '🕹️ Kada odgovoriš na ova pitanja, neko iz tima će ti se ubrzo javiti.',
+            'Ã°Å¸â€¢Â¹Ã¯Â¸Â Kada odgovoriÃ…Â¡ na ova pitanja, neko iz tima Ã„â€¡e ti se ubrzo javiti.',
           ].join('\n');
         }
         break;
@@ -3021,48 +3014,48 @@ if (interaction.commandName === 'update-field') {
       case 'zalba':
         if (typeCfg && typeCfg.questions?.length) {
           ticketMessage = [
-            `⚠️ Zdravo <@${member.id}>, hvala što si otvorio **${typeCfg.title || 'žalbu na igrače'}** ticket.`,
+            `Ã¢Å¡Â Ã¯Â¸Â Zdravo <@${member.id}>, hvala Ã…Â¡to si otvorio **${typeCfg.title || 'Ã…Â¾albu na igraÃ„Âe'}** ticket.`,
             '',
-            '**Molimo te da odgovoriš na sljedeća pitanja:**',
+            '**Molimo te da odgovoriÃ…Â¡ na sljedeÃ„â€¡a pitanja:**',
             '',
             ...typeCfg.questions.map((q) => `- ${q}`),
             '',
-            '👮 Moderatori će pregledati prijavu i javiti ti se.',
+            'Ã°Å¸â€˜Â® Moderatori Ã„â€¡e pregledati prijavu i javiti ti se.',
           ].join('\n');
         } else {
           ticketMessage =
-            `⚠️ Zdravo <@${member.id}>, hvala što si otvorio **žalbu na igrače**.\n` +
-            'Molimo te da navedeš:\n' +
-            '• Ime igrača na kojeg se žališ\n' +
-            '• Vrijeme i detaljan opis situacije\n' +
-            '• Dokaze (slike, video, logovi) ako ih imaš.\n' +
-            '👮 Moderatori će pregledati prijavu i javiti ti se.';
+            `Ã¢Å¡Â Ã¯Â¸Â Zdravo <@${member.id}>, hvala Ã…Â¡to si otvorio **Ã…Â¾albu na igraÃ„Âe**.\n` +
+            'Molimo te da navedeÃ…Â¡:\n' +
+            'Ã¢â‚¬Â¢ Ime igraÃ„Âa na kojeg se Ã…Â¾aliÃ…Â¡\n' +
+            'Ã¢â‚¬Â¢ Vrijeme i detaljan opis situacije\n' +
+            'Ã¢â‚¬Â¢ Dokaze (slike, video, logovi) ako ih imaÃ…Â¡.\n' +
+            'Ã°Å¸â€˜Â® Moderatori Ã„â€¡e pregledati prijavu i javiti ti se.';
         }
         break;
 
       case 'modovi':
         if (typeCfg && typeCfg.questions?.length) {
           ticketMessage = [
-            `🧩 Zdravo <@${member.id}>, hvala što si otvorio **${typeCfg.title || 'izrada modova'}** ticket.`,
+            `Ã°Å¸Â§Â© Zdravo <@${member.id}>, hvala Ã…Â¡to si otvorio **${typeCfg.title || 'izrada modova'}** ticket.`,
             '',
-            '**Kako bismo ti lakše pomogli, odgovori na sljedeća pitanja:**',
+            '**Kako bismo ti lakÃ…Â¡e pomogli, odgovori na sljedeÃ„â€¡a pitanja:**',
             '',
             ...typeCfg.questions.map((q) => `- ${q}`),
             '',
-            '💡 Što više informacija daš, lakše ćemo pomoći.',
+            'Ã°Å¸â€™Â¡ Ã…Â to viÃ…Â¡e informacija daÃ…Â¡, lakÃ…Â¡e Ã„â€¡emo pomoÃ„â€¡i.',
           ].join('\n');
         } else {
           ticketMessage =
-            `🧩 Zdravo <@${member.id}>, hvala što si otvorio **izrada modova** ticket.\n` +
-            'Opiši kakav mod radiš ili s kojim dijelom imaš problem.\n' +
-            '💡 Slobodno pošalji kod, ideju ili primjer – što više informacija daš, lakše ćemo pomoći.';
+            `Ã°Å¸Â§Â© Zdravo <@${member.id}>, hvala Ã…Â¡to si otvorio **izrada modova** ticket.\n` +
+            'OpiÃ…Â¡i kakav mod radiÃ…Â¡ ili s kojim dijelom imaÃ…Â¡ problem.\n' +
+            'Ã°Å¸â€™Â¡ Slobodno poÃ…Â¡alji kod, ideju ili primjer Ã¢â‚¬â€œ Ã…Â¡to viÃ…Â¡e informacija daÃ…Â¡, lakÃ…Â¡e Ã„â€¡emo pomoÃ„â€¡i.';
         }
         break;
 
       default:
         ticketMessage =
-          `👋 Zdravo <@${member.id}>, hvala što si otvorio ticket.\n` +
-          'Molimo te da opišeš svoj problem što detaljnije.';
+          `Ã°Å¸â€˜â€¹ Zdravo <@${member.id}>, hvala Ã…Â¡to si otvorio ticket.\n` +
+          'Molimo te da opiÃ…Â¡eÃ…Â¡ svoj problem Ã…Â¡to detaljnije.';
         break;
     }
 
@@ -3103,7 +3096,7 @@ if (interaction.commandName === 'update-field') {
 
       if (!typeCfg) {
         return interaction.reply({
-          content: '⚠️ Ticket forma nije pronađena. Pokušaj ponovno.',
+          content: 'Ã¢Å¡Â Ã¯Â¸Â Ticket forma nije pronaÃ„â€˜ena. PokuÃ…Â¡aj ponovno.',
           ephemeral: true,
         });
       }
@@ -3115,7 +3108,7 @@ if (interaction.commandName === 'update-field') {
     if (interaction.customId === 'field_add_button') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
-          content: '⛔ Samo staff/admin može dodavati polja.',
+          content: 'Ã¢â€ºâ€ Samo staff/admin moÃ…Â¾e dodavati polja.',
           ephemeral: true,
         });
       }
@@ -3164,8 +3157,8 @@ if (interaction.customId === 'task_start') {
 
   const embed = new EmbedBuilder()
     .setColor('#ffd900')
-    .setTitle('🚜 Kreiranje zadatka – Korak 1')
-    .setDescription('Odaberi polje za koje želiš kreirati posao.');
+    .setTitle('Ã°Å¸Å¡Å“ Kreiranje zadatka Ã¢â‚¬â€œ Korak 1')
+    .setDescription('Odaberi polje za koje Ã…Â¾eliÃ…Â¡ kreirati posao.');
 
   await interaction.reply({
     embeds: [embed],
@@ -3176,11 +3169,11 @@ if (interaction.customId === 'task_start') {
 }
 
 
-// === OPĆI ZADATAK: START (BEZ POLJA) ===
+// === OPÃ„â€ I ZADATAK: START (BEZ POLJA) ===
 if (interaction.customId === 'task_general_start') {
   const modal = new ModalBuilder()
     .setCustomId('task_general_modal')
-    .setTitle('📝 Novi zadatak');
+    .setTitle('Ã°Å¸â€œÂ Novi zadatak');
 
   const titleInput = new TextInputBuilder()
     .setCustomId('task_title')
@@ -3214,7 +3207,7 @@ if (interaction.customId === 'task_general_start') {
 
       const embed = new EmbedBuilder()
         .setColor('#00a84d')
-        .setTitle('🚜 Kreiranje zadatka – Korak 2')
+        .setTitle('Ã°Å¸Å¡Å“ Kreiranje zadatka Ã¢â‚¬â€œ Korak 2')
         .setDescription(
           `Odabrano polje: **Polje ${fieldId}**\n\nSada odaberi vrstu posla:`
         );
@@ -3230,7 +3223,7 @@ if (interaction.customId === 'task_general_start') {
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_djubrenje')
-          .setLabel('Đubrenje')
+          .setLabel('Ã„Âubrenje')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_tanjiranje')
@@ -3249,11 +3242,11 @@ if (interaction.customId === 'task_general_start') {
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_kosnja_trave')
-          .setLabel('Košnja trave')
+          .setLabel('KoÃ…Â¡nja trave')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_kosnja_djeteline')
-          .setLabel('Košnja djeteline')
+          .setLabel('KoÃ…Â¡nja djeteline')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_kombajniranje_modal')
@@ -3268,7 +3261,7 @@ if (interaction.customId === 'task_general_start') {
       const jobsRow3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('task_job_malciranje')
-          .setLabel('Malčiranje')
+          .setLabel('MalÃ„Âiranje')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_spajanje')
@@ -3291,7 +3284,7 @@ if (interaction.customId === 'task_general_start') {
       const jobsRow4 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('task_job_zamotavanje')
-          .setLabel('Zamotati bale za silažu')
+          .setLabel('Zamotati bale za silaÃ…Â¾u')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_zimska')
@@ -3299,7 +3292,7 @@ if (interaction.customId === 'task_general_start') {
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_ceste')
-          .setLabel('Čišćenje ceste')
+          .setLabel('Ã„Å’iÃ…Â¡Ã„â€¡enje ceste')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_rolanje')
@@ -3307,7 +3300,7 @@ if (interaction.customId === 'task_general_start') {
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('task_job_silaza')
-          .setLabel('Silaža')
+          .setLabel('SilaÃ…Â¾a')
           .setStyle(ButtonStyle.Primary)
       );
 
@@ -3330,7 +3323,7 @@ if (interaction.customId === 'task_general_start') {
 
 if (!current || !current.field) {
   return interaction.reply({
-    content: '⚠️ Nije pronađeno polje.',
+    content: 'Ã¢Å¡Â Ã¯Â¸Â Nije pronaÃ„â€˜eno polje.',
     ephemeral: true,
   });
 }
@@ -3339,22 +3332,22 @@ const jobKey = interaction.customId.replace('task_job_', '');
 const jobNames = {
   oranje: 'Oranje',
   lajn: 'Bacanje lajma',
-  djubrenje: 'Đubrenje',
+  djubrenje: 'Ã„Âubrenje',
   tanjiranje: 'Kultiviranje',
   podrivanje: 'Podrivanje',
   herbicid: 'Prskanje herbicidom',
-  kosnja_trave: 'Košnja trave',
-  kosnja_djeteline: 'Košnja djeteline',
-  malciranje: 'Malčiranje',
+  kosnja_trave: 'KoÃ…Â¡nja trave',
+  kosnja_djeteline: 'KoÃ…Â¡nja djeteline',
+  malciranje: 'MalÃ„Âiranje',
   spajanje: 'Spajanje polja',
   baliranje: 'Baliranje',
   skupljanje: 'Skupljanje u redove',
   okretanje: 'Prevrtanje trave / djeteline',
-  zamotavanje: 'Zamotati bale za silažu',
+  zamotavanje: 'Zamotati bale za silaÃ…Â¾u',
   zimska: 'Zimska brazda',
-  ceste: 'Čišćenje ceste',
+  ceste: 'Ã„Å’iÃ…Â¡Ã„â€¡enje ceste',
   rolanje: 'Rolanje polja',
-  silaza: 'Silaža',
+  silaza: 'SilaÃ…Â¾a',
 };
 
 current.jobKey = jobKey;
@@ -3362,37 +3355,37 @@ current.jobName = jobNames[jobKey] || jobKey;
 activeTasks.set(interaction.user.id, current);
 
 
-      // ⛔ OVDJE VIŠE NE KREIRAŠ ZADATAK
+      // Ã¢â€ºâ€ OVDJE VIÃ…Â E NE KREIRAÃ…Â  ZADATAK
 
 const embed = new EmbedBuilder()
   .setColor('#5865f2')
-  .setTitle('🚦 Odaberi prioritet posla')
+  .setTitle('Ã°Å¸Å¡Â¦ Odaberi prioritet posla')
   .setDescription(
-    `🚜 **Polje:** ${current.field}\n` +
-    `🛠️ **Posao:** ${current.jobName}\n\n` +
+    `Ã°Å¸Å¡Å“ **Polje:** ${current.field}\n` +
+    `Ã°Å¸â€ºÂ Ã¯Â¸Â **Posao:** ${current.jobName}\n\n` +
     'Odaberi prioritet:'
   );
 
 const row = new ActionRowBuilder().addComponents(
   new ButtonBuilder()
     .setCustomId('task_priority_hitno')
-    .setLabel('🔴 HITNO')
+    .setLabel('Ã°Å¸â€Â´ HITNO')
     .setStyle(ButtonStyle.Danger),
   new ButtonBuilder()
     .setCustomId('task_priority_visok')
-    .setLabel('🟠 Visok')
+    .setLabel('Ã°Å¸Å¸Â  Visok')
     .setStyle(ButtonStyle.Primary),
   new ButtonBuilder()
     .setCustomId('task_priority_srednji')
-    .setLabel('🟡 Srednji')
+    .setLabel('Ã°Å¸Å¸Â¡ Srednji')
     .setStyle(ButtonStyle.Secondary),
   new ButtonBuilder()
     .setCustomId('task_priority_nizak')
-    .setLabel('🟢 Nizak')
+    .setLabel('Ã°Å¸Å¸Â¢ Nizak')
     .setStyle(ButtonStyle.Success)
 );
 
-// VAŽNO
+// VAÃ…Â½NO
 return interaction.update({
   embeds: [embed],
   components: [row],
@@ -3401,22 +3394,22 @@ return interaction.update({
     }
 
 // ==============================
-// 3️⃣ PRIORITET → KREIRANJE POSLA
+// 3Ã¯Â¸ÂÃ¢Æ’Â£ PRIORITET Ã¢â€ â€™ KREIRANJE POSLA
 // ==============================
 if (interaction.customId.startsWith('task_priority_')) {
   const current = activeTasks.get(interaction.user.id);
   if (!current) {
     return interaction.reply({
-      content: '⚠️ Nema aktivnog zadatka.',
+      content: 'Ã¢Å¡Â Ã¯Â¸Â Nema aktivnog zadatka.',
       ephemeral: true,
     });
   }
 
   const priorities = {
-    hitno:   { label: '🔴 HITNO', value: 4, color: '#ff0000' },
-    visok:   { label: '🟠 Visok', value: 3, color: '#ffa500' },
-    srednji: { label: '🟡 Srednji', value: 2, color: '#ffd000' },
-    nizak:   { label: '🟢 Nizak', value: 1, color: '#3ba55d' },
+    hitno:   { label: 'Ã°Å¸â€Â´ HITNO', value: 4, color: '#ff0000' },
+    visok:   { label: 'Ã°Å¸Å¸Â  Visok', value: 3, color: '#ffa500' },
+    srednji: { label: 'Ã°Å¸Å¸Â¡ Srednji', value: 2, color: '#ffd000' },
+    nizak:   { label: 'Ã°Å¸Å¸Â¢ Nizak', value: 1, color: '#3ba55d' },
   };
 
   const key = interaction.customId.replace('task_priority_', '');
@@ -3424,12 +3417,12 @@ if (interaction.customId.startsWith('task_priority_')) {
   if (!prio) return;
 
   // ==============================
-  // 📝 OPĆI ZADATAK (BEZ POLJA)
+  // Ã°Å¸â€œÂ OPÃ„â€ I ZADATAK (BEZ POLJA)
   // ==============================
   if (current.type === 'general') {
     const embed = new EmbedBuilder()
       .setColor(prio.color)
-      .setTitle(`${prio.label} — Zadatak`)
+      .setTitle(`${prio.label} Ã¢â‚¬â€ Zadatak`)
       .addFields(
         { name: 'Zadatak', value: current.title, inline: false },
         ...(current.description
@@ -3442,7 +3435,7 @@ if (interaction.customId.startsWith('task_priority_')) {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('task_done')
-        .setLabel('✅ Završi zadatak')
+        .setLabel('Ã¢Å“â€¦ ZavrÃ…Â¡i zadatak')
         .setStyle(ButtonStyle.Success)
     );
 
@@ -3469,24 +3462,24 @@ if (interaction.customId.startsWith('task_priority_')) {
     activeTasks.delete(interaction.user.id);
 
     return interaction.reply({
-      content: '✅ Opći zadatak je kreiran.',
+      content: 'Ã¢Å“â€¦ OpÃ„â€¡i zadatak je kreiran.',
       ephemeral: true,
     });
   }
 
   // ==============================
-  // 🚜 FARMING POSAO (POLJA)
+  // Ã°Å¸Å¡Å“ FARMING POSAO (POLJA)
   // ==============================
   if (!current.field || !current.jobName) {
     return interaction.reply({
-      content: '⚠️ Nema aktivnog farming zadatka.',
+      content: 'Ã¢Å¡Â Ã¯Â¸Â Nema aktivnog farming zadatka.',
       ephemeral: true,
     });
   }
 
   const embed = new EmbedBuilder()
     .setColor(prio.color)
-    .setTitle(`${prio.label} — Novi zadatak`)
+    .setTitle(`${prio.label} Ã¢â‚¬â€ Novi zadatak`)
     .addFields(
       { name: 'Polje', value: `Polje ${current.field}`, inline: true },
       { name: 'Posao', value: current.jobName, inline: true },
@@ -3497,7 +3490,7 @@ if (interaction.customId.startsWith('task_priority_')) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('task_done')
-      .setLabel('✅ Završi zadatak')
+      .setLabel('Ã¢Å“â€¦ ZavrÃ…Â¡i zadatak')
       .setStyle(ButtonStyle.Success)
   );
 
@@ -3525,20 +3518,20 @@ if (interaction.customId.startsWith('task_priority_')) {
   activeTasks.delete(interaction.user.id);
 
   return interaction.reply({
-    content: '✅ Farming zadatak je uspješno kreiran.',
+    content: 'Ã¢Å“â€¦ Farming zadatak je uspjeÃ…Â¡no kreiran.',
     ephemeral: true,
   });
 }
 
 
 
-    // === FARMING: Sijanje – otvaranje modala ===
+    // === FARMING: Sijanje Ã¢â‚¬â€œ otvaranje modala ===
     if (interaction.customId === 'task_job_sijanje') {
       const current = activeTasks.get(interaction.user.id);
       if (!current || !current.field) {
         await interaction.reply({
           content:
-            '⚠️ Nije pronađeno polje. Pokušaj ponovno klikom na „Kreiraj posao“.',
+            'Ã¢Å¡Â Ã¯Â¸Â Nije pronaÃ„â€˜eno polje. PokuÃ…Â¡aj ponovno klikom na Ã¢â‚¬Å¾Kreiraj posaoÃ¢â‚¬Å“.',
           ephemeral: true,
         });
         return;
@@ -3546,11 +3539,11 @@ if (interaction.customId.startsWith('task_priority_')) {
 
       const modal = new ModalBuilder()
         .setCustomId('task_sowing_modal')
-        .setTitle('Sijanje – unos kulture');
+        .setTitle('Sijanje Ã¢â‚¬â€œ unos kulture');
 
       const input = new TextInputBuilder()
         .setCustomId('seed_name')
-        .setLabel('Što se sije? (npr. kukuruz, ječam...)')
+        .setLabel('Ã…Â to se sije? (npr. kukuruz, jeÃ„Âam...)')
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
@@ -3561,13 +3554,13 @@ if (interaction.customId.startsWith('task_priority_')) {
       return;
     }
 
-    // === FARMING: Kombajniranje – otvaranje modala ===
+    // === FARMING: Kombajniranje Ã¢â‚¬â€œ otvaranje modala ===
     if (interaction.customId === 'task_job_kombajniranje_modal') {
       const current = activeTasks.get(interaction.user.id);
       if (!current || !current.field) {
         await interaction.reply({
           content:
-            '⚠️ Nije pronađeno polje. Pokušaj ponovno klikom na „Kreiraj posao“.',
+            'Ã¢Å¡Â Ã¯Â¸Â Nije pronaÃ„â€˜eno polje. PokuÃ…Â¡aj ponovno klikom na Ã¢â‚¬Å¾Kreiraj posaoÃ¢â‚¬Å“.',
           ephemeral: true,
         });
         return;
@@ -3575,11 +3568,11 @@ if (interaction.customId.startsWith('task_priority_')) {
 
       const modal = new ModalBuilder()
         .setCustomId('task_harvest_modal')
-        .setTitle('Kombajniranje – unos detalja');
+        .setTitle('Kombajniranje Ã¢â‚¬â€œ unos detalja');
 
       const input = new TextInputBuilder()
         .setCustomId('harvest_info')
-        .setLabel('Što se kombajnira? (npr. pšenica, soja...)')
+        .setLabel('Ã…Â to se kombajnira? (npr. pÃ…Â¡enica, soja...)')
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
@@ -3590,27 +3583,27 @@ if (interaction.customId.startsWith('task_priority_')) {
       return;
     }
 
-    // === FARMING: označi zadatak kao završen ručno ===
+    // === FARMING: oznaÃ„Âi zadatak kao zavrÃ…Â¡en ruÃ„Âno ===
 if (interaction.customId === 'task_done') {
   const oldEmbed = interaction.message.embeds[0];
 
   if (!oldEmbed) {
     await interaction.reply({
-      content: '⚠️ Ne mogu pronaći podatke o zadatku.',
+      content: 'Ã¢Å¡Â Ã¯Â¸Â Ne mogu pronaÃ„â€¡i podatke o zadatku.',
       ephemeral: true,
     });
     return;
   }
 
-  // 🔍 PRONAĐI ZADATAK U DB-u PO PORUKI
+  // Ã°Å¸â€Â PRONAÃ„ÂI ZADATAK U DB-u PO PORUKI
   const db = loadDb();
   const task = db.farmingTasks.find(t => t.messageId === interaction.message.id);
 
-  // 🌾 Ako je ovo bio zadatak SIJANJA → upis u sezonu
+  // Ã°Å¸Å’Â¾ Ako je ovo bio zadatak SIJANJA Ã¢â€ â€™ upis u sezonu
   if (task && task.jobKey === 'sijanje') {
     const cropName = task.cropName || task.jobName || "nepoznato";
 
-    // 🔧 FIX – upiši cropName u DB ako nedostaje
+    // Ã°Å¸â€Â§ FIX Ã¢â‚¬â€œ upiÃ…Â¡i cropName u DB ako nedostaje
 if (!task.cropName) {
     task.cropName = cropName;
     saveDb(db);
@@ -3618,25 +3611,25 @@ if (!task.cropName) {
 
 
     try {
-    console.log("➡ Pokrećem ručni upis sjetve u sezonu...");
+    console.log("Ã¢Å¾Â¡ PokreÃ„â€¡em ruÃ„Âni upis sjetve u sezonu...");
     await handleNewSowingTask(interaction.guild, task.field, cropName);
-    console.log(`🌾 Ručno završavanje sjetve → Polje ${task.field}: ${cropName}`);
+    console.log(`Ã°Å¸Å’Â¾ RuÃ„Âno zavrÃ…Â¡avanje sjetve Ã¢â€ â€™ Polje ${task.field}: ${cropName}`);
 
-    // 🔥 PRISILNI REFRESH EMBEDA
+    // Ã°Å¸â€Â¥ PRISILNI REFRESH EMBEDA
     await updateSeasonEmbed(interaction.guild);
-    console.log("🌾 Embed sezone ručno osvježen.");
+    console.log("Ã°Å¸Å’Â¾ Embed sezone ruÃ„Âno osvjeÃ…Â¾en.");
 } catch (err) {
-    console.error("❌ Greška pri ručnom upisu sjetve:", err);
+    console.error("Ã¢ÂÅ’ GreÃ…Â¡ka pri ruÃ„Ânom upisu sjetve:", err);
 }
 
   }
 
-  // 🔄 GENERIRAJ NOVI EMBED O ZAVRŠETKU
+  // Ã°Å¸â€â€ž GENERIRAJ NOVI EMBED O ZAVRÃ…Â ETKU
   const finishedEmbed = EmbedBuilder.from(oldEmbed)
     .setColor('#ff0000')
-    .setTitle('✅ Zadatak završen')
+    .setTitle('Ã¢Å“â€¦ Zadatak zavrÃ…Â¡en')
     .setFooter({
-      text: 'Označeno kao završeno od strane: ' + interaction.user.tag,
+      text: 'OznaÃ„Âeno kao zavrÃ…Â¡eno od strane: ' + interaction.user.tag,
     })
     .setTimestamp();
 
@@ -3646,7 +3639,7 @@ if (!task.cropName) {
 
   await interaction.reply({
     content:
-      '✅ Zadatak je označen kao završen i prebačen u kanal za završene poslove.',
+      'Ã¢Å“â€¦ Zadatak je oznaÃ„Âen kao zavrÃ…Â¡en i prebaÃ„Âen u kanal za zavrÃ…Â¡ene poslove.',
     ephemeral: true,
   });
 
@@ -3666,7 +3659,7 @@ if (!task.cropName) {
 
       if (!hasStaffPerms) {
         return interaction.reply({
-          content: '⛔ Samo staff/admin može koristiti ovu opciju.',
+          content: 'Ã¢â€ºâ€ Samo staff/admin moÃ…Â¾e koristiti ovu opciju.',
           ephemeral: true,
         });
       }
@@ -3699,14 +3692,14 @@ if (!task.cropName) {
         });
 
         await interaction.reply({
-          content: `✅ Ticket je preuzeo/la ${interaction.user}.`,
+          content: `Ã¢Å“â€¦ Ticket je preuzeo/la ${interaction.user}.`,
         });
         return;
       }
 
       if (interaction.customId === 'ticket_close') {
         await interaction.reply({
-          content: '🔒 Ticket je zatvoren. Kanal je označen kao zatvoren.',
+          content: 'Ã°Å¸â€â€™ Ticket je zatvoren. Kanal je oznaÃ„Âen kao zatvoren.',
           ephemeral: true,
         });
 
@@ -3784,7 +3777,7 @@ if (!task.cropName) {
         pendingTicketForms.delete(interaction.user.id);
         return interaction.reply({
           content:
-            '⛔ Ne mozes zavrsiti otvaranje ticketa jer si na ticket blackliste.' +
+            'Ã¢â€ºâ€ Ne mozes zavrsiti otvaranje ticketa jer si na ticket blackliste.' +
             (blacklistEntry.reason ? `\nRazlog: ${blacklistEntry.reason}` : ''),
           ephemeral: true,
         });
@@ -3792,7 +3785,7 @@ if (!task.cropName) {
 
       if (!typeCfg || !state || state.type !== type) {
         return interaction.reply({
-          content: '⚠️ Ticket forma je istekla. Otvori ticket ponovno iz panela.',
+          content: 'Ã¢Å¡Â Ã¯Â¸Â Ticket forma je istekla. Otvori ticket ponovno iz panela.',
           ephemeral: true,
         });
       }
@@ -3812,15 +3805,15 @@ if (!task.cropName) {
         .map((entry, index) => `${index + 1}. ${entry.question}\n${entry.answer}`)
         .join('\n\n');
       const modalAnswers = requiresAge
-        ? [{ question: 'Koliko imaš godina?', answer: String(age) }, ...questionAnswers]
+        ? [{ question: 'Koliko imaÃ…Â¡ godina?', answer: String(age) }, ...questionAnswers]
         : questionAnswers;
       const submissionAnswersText = requiresAge
-        ? [`Koliko imaš godina?\n${age}`, ...questionAnswers.map((entry, index) => `${index + 1}. ${entry.question}\n${entry.answer}`)].join('\n\n')
+        ? [`Koliko imaÃ…Â¡ godina?\n${age}`, ...questionAnswers.map((entry, index) => `${index + 1}. ${entry.question}\n${entry.answer}`)].join('\n\n')
         : answersBlob;
 
       if (requiresAge && (!Number.isInteger(age) || age <= 0)) {
         return interaction.reply({
-          content: '⚠️ Polje za godine mora sadržavati ispravan broj.',
+          content: 'Ã¢Å¡Â Ã¯Â¸Â Polje za godine mora sadrÃ…Â¾avati ispravan broj.',
           ephemeral: true,
         });
       }
@@ -3843,7 +3836,7 @@ if (!task.cropName) {
         });
 
         return interaction.reply({
-          content: '❌ Tvoja prijava je odbijena radi maloljetnosti. Minimalna dob za ovaj ticket je 18 godina.',
+          content: 'Ã¢ÂÅ’ Tvoja prijava je odbijena radi maloljetnosti. Minimalna dob za ovaj ticket je 18 godina.',
           ephemeral: true,
         });
       }
@@ -3892,7 +3885,7 @@ if (!task.cropName) {
     if (interaction.customId === 'field_add_modal') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
-          content: '⛔ Samo staff/admin može dodavati polja.',
+          content: 'Ã¢â€ºâ€ Samo staff/admin moÃ…Â¾e dodavati polja.',
           ephemeral: true,
         });
       }
@@ -3901,7 +3894,7 @@ if (!task.cropName) {
 
       if (!value) {
         return interaction.reply({
-          content: '⚠️ Moraš upisati oznaku polja.',
+          content: 'Ã¢Å¡Â Ã¯Â¸Â MoraÃ…Â¡ upisati oznaku polja.',
           ephemeral: true,
         });
       }
@@ -3909,7 +3902,7 @@ if (!task.cropName) {
       const fields = getFarmingFields();
       if (fields.includes(value)) {
         return interaction.reply({
-          content: `⚠️ Polje **${value}** već postoji u listi.`,
+          content: `Ã¢Å¡Â Ã¯Â¸Â Polje **${value}** veÃ„â€¡ postoji u listi.`,
           ephemeral: true,
         });
       }
@@ -3918,12 +3911,12 @@ if (!task.cropName) {
       saveFarmingFields(fields);
 
       return interaction.reply({
-        content: `✅ Polje **${value}** je dodano u listu. Dostupno je u task-panelu.`,
+        content: `Ã¢Å“â€¦ Polje **${value}** je dodano u listu. Dostupno je u task-panelu.`,
         ephemeral: true,
       });
     }
 
-    // 📝 OPĆI ZADATAK – MODAL SUBMIT → PRIORITET
+    // Ã°Å¸â€œÂ OPÃ„â€ I ZADATAK Ã¢â‚¬â€œ MODAL SUBMIT Ã¢â€ â€™ PRIORITET
 if (interaction.customId === 'task_general_modal') {
   const title = interaction.fields.getTextInputValue('task_title');
   const description =
@@ -3937,29 +3930,29 @@ if (interaction.customId === 'task_general_modal') {
 
   const embed = new EmbedBuilder()
     .setColor('#5865f2')
-    .setTitle('🚦 Odaberi prioritet')
+    .setTitle('Ã°Å¸Å¡Â¦ Odaberi prioritet')
     .setDescription(
-      `📝 **Zadatak:** ${title}\n` +
-      (description ? `📄 ${description}\n\n` : '\n') +
+      `Ã°Å¸â€œÂ **Zadatak:** ${title}\n` +
+      (description ? `Ã°Å¸â€œâ€ž ${description}\n\n` : '\n') +
       'Odaberi prioritet:'
     );
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('task_priority_hitno')
-      .setLabel('🔴 HITNO')
+      .setLabel('Ã°Å¸â€Â´ HITNO')
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
       .setCustomId('task_priority_visok')
-      .setLabel('🟠 Visok')
+      .setLabel('Ã°Å¸Å¸Â  Visok')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('task_priority_srednji')
-      .setLabel('🟡 Srednji')
+      .setLabel('Ã°Å¸Å¸Â¡ Srednji')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('task_priority_nizak')
-      .setLabel('🟢 Nizak')
+      .setLabel('Ã°Å¸Å¸Â¢ Nizak')
       .setStyle(ButtonStyle.Success)
   );
 
@@ -3979,7 +3972,7 @@ if (interaction.customId === 'task_general_modal') {
       if (!current || !current.field) {
         await interaction.reply({
           content:
-            '⚠️ Ne mogu pronaći odabrano polje. Pokušaj ponovno od početka.',
+            'Ã¢Å¡Â Ã¯Â¸Â Ne mogu pronaÃ„â€¡i odabrano polje. PokuÃ…Â¡aj ponovno od poÃ„Âetka.',
           ephemeral: true,
         });
         return;
@@ -3987,13 +3980,13 @@ if (interaction.customId === 'task_general_modal') {
 
       const seedName = interaction.fields.getTextInputValue('seed_name');
 
-      // 🌱 Sezona Sjetve – registracija novog posijanog polja
+      // Ã°Å¸Å’Â± Sezona Sjetve Ã¢â‚¬â€œ registracija novog posijanog polja
       await handleNewSowingTask(interaction.guild, current.field, seedName);
 
 
       const embed = new EmbedBuilder()
         .setColor('#00a84d')
-        .setTitle('✅ Novi zadatak kreiran')
+        .setTitle('Ã¢Å“â€¦ Novi zadatak kreiran')
         .addFields(
           { name: 'Polje', value: `Polje ${current.field}`, inline: true },
           { name: 'Posao', value: 'Sijanje', inline: true },
@@ -4005,7 +3998,7 @@ if (interaction.customId === 'task_general_modal') {
       const doneRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('task_done')
-          .setLabel('✅ Zadatak završen')
+          .setLabel('Ã¢Å“â€¦ Zadatak zavrÃ…Â¡en')
           .setStyle(ButtonStyle.Success)
       );
 
@@ -4015,7 +4008,7 @@ if (interaction.customId === 'task_general_modal') {
 
       await interaction.reply({
         content:
-          '✅ Zadatak za sijanje je kreiran i objavljen u kanalu za poslove.',
+          'Ã¢Å“â€¦ Zadatak za sijanje je kreiran i objavljen u kanalu za poslove.',
         ephemeral: true,
       });
 
@@ -4041,25 +4034,25 @@ if (interaction.customId === 'task_general_modal') {
       return;
     }
 
-    // === UPDATE FIELD – STEP 2 (kompletan rename sistema) ===
+    // === UPDATE FIELD Ã¢â‚¬â€œ STEP 2 (kompletan rename sistema) ===
 if (interaction.customId.startsWith("update_field_step2_")) {
     const oldField = interaction.customId.replace("update_field_step2_", "");
     const newField = interaction.fields.getTextInputValue("new_field").trim();
 
-    // === 1) Učitaj listu polja
+    // === 1) UÃ„Âitaj listu polja
     const fields = getFarmingFields();
     const index = fields.indexOf(oldField);
 
     if (index === -1) {
         return interaction.reply({
-            content: `❌ Greška: polje **${oldField}** više ne postoji.`,
+            content: `Ã¢ÂÅ’ GreÃ…Â¡ka: polje **${oldField}** viÃ…Â¡e ne postoji.`,
             ephemeral: true,
         });
     }
 
     if (fields.includes(newField)) {
         return interaction.reply({
-            content: `⚠️ Polje **${newField}** već postoji.`,
+            content: `Ã¢Å¡Â Ã¯Â¸Â Polje **${newField}** veÃ„â€¡ postoji.`,
             ephemeral: true,
         });
     }
@@ -4068,7 +4061,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
     fields[index] = newField;
     saveFarmingFields(fields);
 
-    // === 2) Učitaj DB jer mijenjamo još stvari
+    // === 2) UÃ„Âitaj DB jer mijenjamo joÃ…Â¡ stvari
     const db = loadDb();
 
     // === 3) Update u svim farmingTasks
@@ -4082,7 +4075,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
     saveDb(db);
 
 
-    // === 4) Update embed poruka zadataka (aktivni + završeni)
+    // === 4) Update embed poruka zadataka (aktivni + zavrÃ…Â¡eni)
     async function updateTaskEmbeds() {
         const guild = interaction.guild;
 
@@ -4104,7 +4097,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
             // Regex: zamjenjuje bilo koji oblik "Polje ... oldField"
             const regex = new RegExp(`Polje\\s*[:\\-]*\\s*${oldField}`, "i");
 
-            embed = embed.toJSON(); // lakše manipulirati
+            embed = embed.toJSON(); // lakÃ…Â¡e manipulirati
 
             if (embed.fields) {
                 for (const f of embed.fields) {
@@ -4121,7 +4114,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
     await updateTaskEmbeds();
 
 
-    // === 5) Update Sowing Season (mora promijeniti ključ)
+    // === 5) Update Sowing Season (mora promijeniti kljuÃ„Â)
     const seasons = getSowingSeasons();
     for (const season of seasons) {
         if (season.fields && season.fields[oldField]) {
@@ -4132,16 +4125,16 @@ if (interaction.customId.startsWith("update_field_step2_")) {
     saveSowingSeasons(seasons);
 
 
-    // === 6) Refresh živog embed-a sezone
+    // === 6) Refresh Ã…Â¾ivog embed-a sezone
     try {
         await updateSeasonEmbed(interaction.guild);
     } catch (e) {
-        console.log("Greška refresh sezone:", e);
+        console.log("GreÃ…Â¡ka refresh sezone:", e);
     }
 
 
     return interaction.reply({
-        content: `✅ Polje **${oldField}** je uspješno preimenovano u **${newField}**.\n\nSve poruke, zadaci i sezona su ažurirani.`,
+        content: `Ã¢Å“â€¦ Polje **${oldField}** je uspjeÃ…Â¡no preimenovano u **${newField}**.\n\nSve poruke, zadaci i sezona su aÃ…Â¾urirani.`,
         ephemeral: true,
     });
 }
@@ -4154,7 +4147,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
       if (!current || !current.field) {
         await interaction.reply({
           content:
-            '⚠️ Ne mogu pronaći odabrano polje. Pokušaj ponovno od početka.',
+            'Ã¢Å¡Â Ã¯Â¸Â Ne mogu pronaÃ„â€¡i odabrano polje. PokuÃ…Â¡aj ponovno od poÃ„Âetka.',
           ephemeral: true,
         });
         return;
@@ -4164,7 +4157,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
 
       const embed = new EmbedBuilder()
         .setColor('#00a84d')
-        .setTitle('✅ Novi zadatak kreiran')
+        .setTitle('Ã¢Å“â€¦ Novi zadatak kreiran')
         .addFields(
           { name: 'Polje', value: `Polje ${current.field}`, inline: true },
           { name: 'Posao', value: 'Kombajniranje', inline: true },
@@ -4176,7 +4169,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
       const doneRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('task_done')
-          .setLabel('✅ Zadatak završen')
+          .setLabel('Ã¢Å“â€¦ Zadatak zavrÃ…Â¡en')
           .setStyle(ButtonStyle.Success)
       );
 
@@ -4186,7 +4179,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
 
       await interaction.reply({
         content:
-          '✅ Zadatak za kombajniranje je kreiran i objavljen u kanalu za poslove.',
+          'Ã¢Å“â€¦ Zadatak za kombajniranje je kreiran i objavljen u kanalu za poslove.',
         ephemeral: true,
       });
 
@@ -4214,7 +4207,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
 });
 
 client.login(token).catch((err) => {
-  console.error('❌ Login error:', err);
+  console.error('Ã¢ÂÅ’ Login error:', err);
   
 });
 
