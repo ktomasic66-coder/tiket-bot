@@ -106,7 +106,7 @@ const DEFAULT_TICKET_SYSTEM = {
       'kako bismo mogli nastaviti s procesom.',
     autoClose:
       'Ticket je automatski zatvoren jer 48 sati nije bilo aktivnosti. ' +
-      'Ako i dalje trebaš pomoć, slobodno otvori novi ticket. 🙂',
+      'Ako i dalje trebaš pomoć, slobodno otvori novi ticket pomoć. 🙂',
   },
 };
 

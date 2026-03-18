@@ -7,6 +7,7 @@
     "channelId": ""
   },
   "embeds": [],
+  "ticketBlacklist": [],
   "ticketSystem": {
     "logChannelId": "",
     "categoryId": "",
