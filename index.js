@@ -2061,6 +2061,85 @@ async function upsertTicketRecord({
   );
 }
 
+async function sendIgranjeWelcomeEmbeds(channel) {
+  if (!channel) return;
+
+  const launcherChannelId = '1481028377489047613';
+  const footerIcon =
+    channel.guild.iconURL?.({ extension: 'png', size: 128 }) || null;
+  const footerText = channel.guild.name || 'Slavonska Ravnica';
+
+  const welcomeEmbed = new EmbedBuilder()
+    .setColor('#39d353')
+    .setTitle('🚜 Dobrodošao/la na Slavonsku Ravnicu!')
+    .setDescription(
+      [
+        'Bok i dobrodošao na Slavonsku Ravnicu! 🚜',
+        'Ticket ti je prošao i primljen/a si na server.',
+        '',
+        `Za ulazak u igru idi u kanal <#${launcherChannelId}> i tamo skini naš launcher jer unutra ti sve piše i to je glavni način za ulazak na server.`,
+        '',
+        'Ako želiš, modove možeš dodati i ručno preko ovog linka:',
+        'http://176.57.169.250:8620/mods.html?lang=en',
+        '',
+        'Samo imaj na umu da će se sva buduća ažuriranja prikazivati isključivo kroz launcher, tako da više nećemo posebno lijepiti linkove za nove ili ažurirane modove. Zato ti je launcher ubuduće glavno mjesto za sve updateove.',
+        '',
+        'Ako ti bilo što zapne oko instalacije, modova ili ulaska u igru, slobodno se javi.',
+        'Vidimo se na farmi. 🌾',
+      ].join('\n')
+    )
+    .setFooter(footerIcon ? { text: footerText, iconURL: footerIcon } : { text: footerText })
+    .setTimestamp();
+
+  const rulesEmbed = new EmbedBuilder()
+    .setColor('#ff5c5c')
+    .setTitle('📜 Pravila servera')
+    .setDescription(
+      [
+        'Molimo te da pročitaš pravila servera prije početka igre.',
+        '',
+        '• Poštuj sve igrače na serveru',
+        '• Zabranjeno je uništavanje tuđe imovine',
+        '• Ne ostavljaj vozila na cesti',
+        '• Koristi samo svoja polja i farmu',
+        '• Exploit/cheat = trajni ban',
+        '• Slušaj upute admina i moderatora',
+        '',
+        'Kršenje pravila rezultira opomenom, kickom ili banom. ⚠️',
+      ].join('\n')
+    )
+    .setFooter(footerIcon ? { text: footerText, iconURL: footerIcon } : { text: footerText })
+    .setTimestamp();
+
+  const launcherEmbed = new EmbedBuilder()
+    .setColor('#4f86ff')
+    .setTitle('📥 Launcher -- preuzimanje i instalacija')
+    .setDescription(
+      [
+        'Naš launcher je glavni način za ulazak na server.',
+        '',
+        '**Gdje preuzeti?**',
+        `Idi u kanal <#${launcherChannelId}> i preuzmi launcher.`,
+        '',
+        '**Kako radi?**',
+        '• Pokreni launcher',
+        '• Automatski će preuzeti sve potrebne modove',
+        '• Klikni "Play" i igra te prebacuje na server',
+        '',
+        '**Problemi?**',
+        '• Pokreni launcher kao Administrator',
+        '• Provjeri da ti antivirus ne blokira',
+        '• Ako ništa ne pomaže, javi se u support kanal',
+      ].join('\n')
+    )
+    .setFooter(footerIcon ? { text: footerText, iconURL: footerIcon } : { text: footerText })
+    .setTimestamp();
+
+  await channel.send({ embeds: [welcomeEmbed] });
+  await channel.send({ embeds: [rulesEmbed] });
+  await channel.send({ embeds: [launcherEmbed] });
+}
+
 async function openTicketChannelFromModalAnswers({
   guild,
   member,
@@ -2171,6 +2250,12 @@ async function openTicketChannelFromModalAnswers({
     embeds: [introEmbed],
     components: [buttons],
   });
+
+  if (type === 'igranje') {
+    await sendIgranjeWelcomeEmbeds(channel).catch((err) => {
+      console.log('IGRANJE WELCOME EMBEDS ERROR:', err.message);
+    });
+  }
 
   await upsertTicketRecord({
     guildId: guild.id,
