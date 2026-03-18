@@ -1923,7 +1923,7 @@ function buildTicketQuestionModal(type, typeCfg) {
     new TextInputBuilder()
       .setCustomId('age')
       .setLabel('Koliko imas godina?')
-      .setPlaceholder('Upisi broj, npr. 18')
+      .setPlaceholder('Upiši svoje godine.')
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setMinLength(1)
