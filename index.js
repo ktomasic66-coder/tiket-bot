@@ -1657,6 +1657,14 @@ async function removePlayerRole(member) {
   return !member.roles.cache.has(PLAYER_ROLE_ID);
 }
 
+async function addPlayerRole(member) {
+  if (!member || !PLAYER_ROLE_ID) return false;
+  if (member.roles.cache.has(PLAYER_ROLE_ID)) return true;
+
+  await member.roles.add(PLAYER_ROLE_ID).catch(() => {});
+  return member.roles.cache.has(PLAYER_ROLE_ID);
+}
+
 async function removeBlacklistRole(member) {
   if (!member || !BLACKLIST_ROLE_ID) return false;
   if (!member.roles.cache.has(BLACKLIST_ROLE_ID)) return true;
@@ -2657,6 +2665,7 @@ if (interaction.commandName === 'task-panel') {
 
       if (removed && targetMember) {
         await removeBlacklistRole(targetMember);
+        await addPlayerRole(targetMember);
       }
 
       if (removed) {
