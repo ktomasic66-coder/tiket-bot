@@ -128,6 +128,8 @@ function getDefaultData() {
     },
     embeds: [],
     ticketBlacklist: [],
+    ticketSubmissions: [],
+    ticketRecords: [],
     ticketSystem: JSON.parse(JSON.stringify(DEFAULT_TICKET_SYSTEM)),
     // 🔹 ovdje ćemo spremati aktivne/završene FS zadatke (da ih možemo naći po polju)
     farmingTasks: [],
@@ -155,6 +157,12 @@ function mergeDbData(raw) {
     ticketBlacklist: Array.isArray(data.ticketBlacklist)
       ? data.ticketBlacklist
       : base.ticketBlacklist,
+    ticketSubmissions: Array.isArray(data.ticketSubmissions)
+      ? data.ticketSubmissions
+      : base.ticketSubmissions,
+    ticketRecords: Array.isArray(data.ticketRecords)
+      ? data.ticketRecords
+      : base.ticketRecords,
     ticketSystem: {
       ...base.ticketSystem,
       ...(data.ticketSystem || {}),
@@ -1978,7 +1986,7 @@ function buildTicketCategoryRow() {
 
   menu.addOptions({
     label: 'Pomoć',
-    description: 'Pitanje ili problem za admin tim bez 18+ uvjeta.',
+    description: 'Pitanje ili problem za admin tim.',
     value: 'pomoc',
     emoji: '🛠️',
   });
@@ -2034,7 +2042,29 @@ async function saveTicketSubmission({
   questions,
   answersText,
 }) {
-  if (!useMySql || !dbPool) return;
+  if (!useMySql || !dbPool) {
+    const data = loadDb();
+    const submissions = Array.isArray(data.ticketSubmissions) ? data.ticketSubmissions : [];
+
+    submissions.push({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      guildId: guildId || '',
+      userId: userId || '',
+      username: username || '',
+      ticketType: ticketType || '',
+      status: status || 'submitted',
+      age: Number.isFinite(age) ? age : null,
+      isAdult: Boolean(isAdult),
+      channelId: channelId || null,
+      questions: Array.isArray(questions) ? questions : [],
+      answersText: String(answersText || ''),
+      createdAt: new Date().toISOString(),
+    });
+
+    data.ticketSubmissions = submissions;
+    saveDb(data);
+    return;
+  }
 
   await dbPool.query(
     `INSERT INTO ticket_submissions
@@ -2076,7 +2106,63 @@ async function upsertTicketRecord({
   answersText = null,
   transcriptText = null,
 }) {
-  if (!useMySql || !dbPool || !channelId) return;
+  if (!channelId) return;
+
+  if (!useMySql || !dbPool) {
+    const data = loadDb();
+    const records = Array.isArray(data.ticketRecords) ? data.ticketRecords : [];
+    const existingIndex = records.findIndex((record) => record.channelId === channelId);
+    const previous = existingIndex >= 0 ? records[existingIndex] : null;
+
+    const nextRecord = {
+      id: previous?.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      guildId: guildId || previous?.guildId || '',
+      userId: userId || previous?.userId || '',
+      username: username || previous?.username || '',
+      ticketType: ticketType || previous?.ticketType || '',
+      ticketTitle: ticketTitle || previous?.ticketTitle || '',
+      status: status || previous?.status || 'opened',
+      age: Number.isFinite(age) ? age : previous?.age ?? null,
+      isAdult:
+        Number.isFinite(age) || typeof isAdult === 'boolean'
+          ? Boolean(isAdult)
+          : previous?.isAdult ?? false,
+      channelId,
+      channelName: channelName || previous?.channelName || '',
+      claimedById: claimedById ?? previous?.claimedById ?? null,
+      claimedByTag: claimedByTag ?? previous?.claimedByTag ?? null,
+      closedById: closedById ?? previous?.closedById ?? null,
+      closedByTag: closedByTag ?? previous?.closedByTag ?? null,
+      closeReason: closeReason ?? previous?.closeReason ?? null,
+      questions: Array.isArray(questions) ? questions : previous?.questions ?? [],
+      answers: Array.isArray(answers) ? answers : previous?.answers ?? [],
+      answersText:
+        answersText == null || answersText === ''
+          ? previous?.answersText ?? ''
+          : String(answersText),
+      transcriptText: transcriptText ?? previous?.transcriptText ?? null,
+      openedAt: previous?.openedAt || new Date().toISOString(),
+      claimedAt:
+        claimedById && !previous?.claimedAt
+          ? new Date().toISOString()
+          : previous?.claimedAt ?? null,
+      closedAt:
+        (closedById || closeReason) && !previous?.closedAt
+          ? new Date().toISOString()
+          : previous?.closedAt ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      records[existingIndex] = nextRecord;
+    } else {
+      records.push(nextRecord);
+    }
+
+    data.ticketRecords = records;
+    saveDb(data);
+    return;
+  }
 
   await dbPool.query(
     `INSERT INTO ticket_records
