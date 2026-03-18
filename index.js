@@ -2577,22 +2577,19 @@ client.on('interactionCreate', async (interaction) => {
         .setDescription(
           'Molimo vas da pažljivo pročitate ovu poruku prije nego što otvorite tiket.\n\n' +
             '**Opcije:**\n' +
-            '• **Igranje na serveru** – Zahtjev za pridruživanje serveru.\n' +
-            '• **Žalba na igrače** – prijava igrača koji krši pravila servera.\n' +
-            '- **Edit modova** - pomoc, ideje ili problemi vezani uz edit modova.\n' +
-            '- **Pomoc** - pitanja ili problemi za admin tim.\n\n' +
-            '**Prije otvaranja tiketa**\n' +
+            '• **Igranje na serveru:** Zahtjev za pridruživanjem serveru.\n' +
+            '• **Žalba na igrače:** Prijava igrača koji krši pravila servera.\n' +
+            '• **Edit modova:** Pomoć, ideje ili problemi vezani uz edit modova.\n' +
+            '• **Pomoć:** Pitanja ili problemi za admin tim.\n\n' +
+            'Prije otvaranja tiketa\n' +
             '1. Provjerite jeste li sve instalirali i podesili prema uputama.\n' +
             '2. Pokušajte sami riješiti problem i provjerite da nije do vaših modova ili klijenta.\n' +
-            '3. Ako ne uspijete, otvorite tiket i ispunite jedan modal upitnik.\n' +
-            '4. Budite strpljivi – netko iz tima će vam se javiti čim bude moguće.\n\n' +
-            '**Napomena:**\n' +
-            '- Kategorija **Igranje na serveru** trazi i pitanje o godinama. Minimalna dob je 18 godina.\n' +
-            '• Pitanja su složena jedno ispod drugog i svako ima zaseban odgovor u modalu.\n\n' +
-            '**Pravila tiketa:**\n' +
+            '3. Ako ne uspijete, otvorite tiket i detaljno opišite svoj problem.\n' +
+            '4. Budite strpljivi, netko iz tima će vam se javiti čim bude moguće.\n\n' +
+            'Pravila tiketa:\n' +
             '• Svi problemi moraju biti jasno i detaljno opisani, bez poruka tipa "ne radi".\n' +
             '• Poštujte članove staff tima.\n' +
-            '• Ne pingajte staff bez razloga – netko će vam se javiti.\n' +
+            '• Ne pingajte staff bez razloga, netko će vam se javiti.\n' +
             '• Tiket bez odgovora korisnika 48h bit će zatvoren.\n' +
             '• Ne otvarajte tikete u pogrešnoj kategoriji.\n' +
             '• Kršenje pravila može rezultirati zatvaranjem tiketa ili sankcijama.'
