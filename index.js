@@ -37,6 +37,7 @@ const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID?.trim();
 
 const SUPPORT_ROLE_ID = process.env.SUPPORT_ROLE_ID; // rola za support
+const PLAYER_ROLE_ID = '1238209853009297560';
 // secret za Farming Server webhooks
 const FS_WEBHOOK_SECRET = process.env.FS_WEBHOOK_SECRET;
 const BLACKLIST_LOG_CHANNEL_ID = '1483576763811364935';
@@ -3605,6 +3606,12 @@ if (!task.cropName) {
           ...questionAnswers,
         ],
       });
+
+      if (type === 'igranje' && PLAYER_ROLE_ID) {
+        await interaction.member.roles.add(PLAYER_ROLE_ID).catch((err) => {
+          console.log('PLAYER ROLE ADD ERROR:', err.message);
+        });
+      }
 
       pendingTicketForms.delete(interaction.user.id);
       await saveTicketSubmission({
