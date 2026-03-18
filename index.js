@@ -88,6 +88,15 @@ const DEFAULT_TICKET_SYSTEM = {
         'Koji editor / verziju igre koristiš?',
       ],
     },
+    pomoc: {
+      title: 'Pomoć',
+      questions: [
+        'U čemu ti treba pomoć?',
+        'Je li problem hitan?',
+        'Na koga ili na što se odnosi problem?',
+        'Dodaj detalje da admin zna šta treba pogledati',
+      ],
+    },
   },
   messages: {
     reminder:
@@ -161,6 +170,10 @@ function mergeDbData(raw) {
         modovi: {
           ...base.ticketSystem.types.modovi,
           ...(data.ticketSystem?.types?.modovi || {}),
+        },
+        pomoc: {
+          ...base.ticketSystem.types.pomoc,
+          ...(data.ticketSystem?.types?.pomoc || {}),
         },
       },
       messages: {
@@ -505,6 +518,10 @@ function getTicketConfig() {
       modovi: {
         ...DEFAULT_TICKET_SYSTEM.types.modovi,
         ...(cfg.types?.modovi || {}),
+      },
+      pomoc: {
+        ...DEFAULT_TICKET_SYSTEM.types.pomoc,
+        ...(cfg.types?.pomoc || {}),
       },
     },
     messages: {
@@ -1020,6 +1037,7 @@ app.post('/dashboard/tickets', (req, res) => {
     igranjeQuestions,
     zalbaQuestions,
     modoviQuestions,
+    pomocQuestions,
     reminderMessage,
     autoCloseMessage,
   } = req.body;
@@ -1043,6 +1061,11 @@ app.post('/dashboard/tickets', (req, res) => {
     .filter(Boolean);
 
   ts.types.modovi.questions = (modoviQuestions || '')
+    .split('\n')
+    .map((q) => q.trim())
+    .filter(Boolean);
+
+  ts.types.pomoc.questions = (pomocQuestions || '')
     .split('\n')
     .map((q) => q.trim())
     .filter(Boolean);
@@ -1899,6 +1922,35 @@ function chunkText(text, size = 1024) {
   return chunks;
 }
 
+function ticketTypeRequiresAge(type) {
+  return type === 'igranje';
+}
+
+function buildPomocTicketModal(typeCfg) {
+  const questions = Array.isArray(typeCfg?.questions)
+    ? typeCfg.questions.map((question) => String(question || '').trim()).filter(Boolean).slice(0, 4)
+    : [];
+
+  const modal = new ModalBuilder()
+    .setCustomId('ticket_answers:pomoc')
+    .setTitle(typeCfg?.title || 'Pomoć');
+
+  const questionRows = questions.map((question, index) =>
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId(`question_${index}`)
+        .setLabel(question.slice(0, 45))
+        .setPlaceholder(question.slice(0, 100))
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(1000)
+    )
+  );
+
+  modal.addComponents(...questionRows);
+  return modal;
+}
+
 function buildTicketCategoryRow() {
   const menu = new StringSelectMenuBuilder()
     .setCustomId('ticket_category')
@@ -1924,6 +1976,13 @@ function buildTicketCategoryRow() {
       }
     );
 
+  menu.addOptions({
+    label: 'Pomoć',
+    description: 'Pitanje ili problem za admin tim bez 18+ uvjeta.',
+    value: 'pomoc',
+    emoji: '🛠️',
+  });
+
   return new ActionRowBuilder().addComponents(menu);
 }
 
@@ -1931,6 +1990,7 @@ function buildTicketQuestionModal(type, typeCfg) {
   const questions = Array.isArray(typeCfg?.questions)
     ? typeCfg.questions.map((question) => String(question || '').trim()).filter(Boolean).slice(0, 4)
     : [];
+  const requiresAge = ticketTypeRequiresAge(type);
   const modal = new ModalBuilder()
     .setCustomId(`ticket_answers:${type}`)
     .setTitle(typeCfg?.title || 'Ticket');
@@ -2788,6 +2848,11 @@ if (interaction.commandName === 'update-field') {
       await interaction.message.edit({
         components: [buildTicketCategoryRow()],
       }).catch(() => {});
+    }
+
+    if (type === 'pomoc') {
+      await interaction.showModal(buildPomocTicketModal(typeCfg));
+      return;
     }
 
     await interaction.showModal(buildTicketQuestionModal(type, typeCfg));
@@ -3648,8 +3713,11 @@ if (!task.cropName) {
         });
       }
 
-      const ageRaw = interaction.fields.getTextInputValue('age').trim();
-      const age = Number.parseInt(ageRaw, 10);
+      const requiresAge = ticketTypeRequiresAge(type);
+      const ageRaw = requiresAge
+        ? interaction.fields.getTextInputValue('age').trim()
+        : '';
+      const age = requiresAge ? Number.parseInt(ageRaw, 10) : null;
       const questionAnswers = (Array.isArray(state.questions) ? state.questions : [])
         .slice(0, 4)
         .map((question, index) => ({
@@ -3659,15 +3727,21 @@ if (!task.cropName) {
       const answersBlob = questionAnswers
         .map((entry, index) => `${index + 1}. ${entry.question}\n${entry.answer}`)
         .join('\n\n');
+      const modalAnswers = requiresAge
+        ? [{ question: 'Koliko imaš godina?', answer: String(age) }, ...questionAnswers]
+        : questionAnswers;
+      const submissionAnswersText = requiresAge
+        ? [`Koliko imaš godina?\n${age}`, ...questionAnswers.map((entry, index) => `${index + 1}. ${entry.question}\n${entry.answer}`)].join('\n\n')
+        : answersBlob;
 
-      if (!Number.isInteger(age) || age <= 0) {
+      if (requiresAge && (!Number.isInteger(age) || age <= 0)) {
         return interaction.reply({
           content: '⚠️ Polje za godine mora sadržavati ispravan broj.',
           ephemeral: true,
         });
       }
 
-      if (age < 18) {
+      if (requiresAge && age < 18) {
         pendingTicketForms.delete(interaction.user.id);
         await saveTicketSubmission({
           guildId: interaction.guild?.id,
@@ -3679,7 +3753,7 @@ if (!task.cropName) {
           isAdult: false,
           channelId: null,
           questions: state.questions,
-          answersText: answersBlob,
+          answersText: submissionAnswersText,
         }).catch((err) => {
           console.log('TICKET SUBMISSION SAVE ERROR:', err.message);
         });
@@ -3698,17 +3772,8 @@ if (!task.cropName) {
         typeCfg,
         age,
         questions: state.questions,
-        answersText: [
-          `Koliko imas godina?\n${age}`,
-          ...questionAnswers.map((entry, index) => `${index + 1}. ${entry.question}\n${entry.answer}`),
-        ].join('\n\n'),
-        answers: [
-          {
-            question: 'Koliko imaš godina?',
-            answer: String(age),
-          },
-          ...questionAnswers,
-        ],
+        answersText: submissionAnswersText,
+        answers: modalAnswers,
       });
 
       if (type === 'igranje' && PLAYER_ROLE_ID) {
@@ -3725,10 +3790,10 @@ if (!task.cropName) {
         ticketType: type,
         status: 'opened',
         age,
-        isAdult: true,
+        isAdult: requiresAge ? true : null,
         channelId: channel.id,
         questions: state.questions,
-        answersText: answersBlob,
+        answersText: submissionAnswersText,
       }).catch((err) => {
         console.log('TICKET SUBMISSION SAVE ERROR:', err.message);
       });
@@ -4068,3 +4133,5 @@ client.login(token).catch((err) => {
   console.error('❌ Login error:', err);
   
 });
+
+
