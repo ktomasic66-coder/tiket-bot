@@ -1649,6 +1649,14 @@ async function addBlacklistRole(member) {
   return member.roles.cache.has(BLACKLIST_ROLE_ID);
 }
 
+async function removePlayerRole(member) {
+  if (!member || !PLAYER_ROLE_ID) return false;
+  if (!member.roles.cache.has(PLAYER_ROLE_ID)) return true;
+
+  await member.roles.remove(PLAYER_ROLE_ID).catch(() => {});
+  return !member.roles.cache.has(PLAYER_ROLE_ID);
+}
+
 async function removeBlacklistRole(member) {
   if (!member || !BLACKLIST_ROLE_ID) return false;
   if (!member.roles.cache.has(BLACKLIST_ROLE_ID)) return true;
@@ -2343,6 +2351,7 @@ client.on('guildMemberAdd', async (member) => {
 
   if (blacklistEntry) {
     await addBlacklistRole(member);
+    await removePlayerRole(member);
   }
 
   if (cfg?.channelId && cfg?.message) {
@@ -2608,6 +2617,7 @@ if (interaction.commandName === 'task-panel') {
 
       if (targetMember) {
         await addBlacklistRole(targetMember);
+        await removePlayerRole(targetMember);
       }
 
       await sendBlacklistLog(
