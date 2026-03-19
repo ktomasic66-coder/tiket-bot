@@ -402,6 +402,15 @@
             %></textarea>
           </label>
 
+          <label>
+            Pomoć - pitanja:
+            <textarea name="pomocQuestions" rows="6"><%= 
+              ts.types && ts.types.pomoc && ts.types.pomoc.questions
+                ? ts.types.pomoc.questions.join('\n')
+                : '' 
+            %></textarea>
+          </label>
+
           <hr />
 
           <h2>Poruke</h2>
