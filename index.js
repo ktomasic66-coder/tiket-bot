@@ -239,16 +239,84 @@ function readLocalDb() {
 }
 
 let dbCache = readLocalDb();
+let sharedConfigUpdatedAt = 0;
+
+async function readSharedBotConfigRow() {
+  if (!useMySql || !dbPool) return null;
+
+  const [rows] = await dbPool.query(
+    'SELECT config_value, updated_at FROM bot_config WHERE config_key = ? LIMIT 1',
+    ['ticket-bot']
+  );
+
+  return rows.length ? rows[0] : null;
+}
+
+function mergeRemoteSharedConfigIntoCache(remoteData) {
+  const mergedRemote = mergeDbData(remoteData);
+
+  dbCache = mergeDbData({
+    ...mergedRemote,
+    ticketBlacklist: Array.isArray(dbCache.ticketBlacklist) ? dbCache.ticketBlacklist : [],
+    ticketSubmissions: Array.isArray(dbCache.ticketSubmissions) ? dbCache.ticketSubmissions : [],
+    ticketRecords: Array.isArray(dbCache.ticketRecords) ? dbCache.ticketRecords : [],
+    farmingTasks: Array.isArray(dbCache.farmingTasks) ? dbCache.farmingTasks : [],
+    farmingFields: Array.isArray(dbCache.farmingFields) ? dbCache.farmingFields : [],
+    sowingSeasons: Array.isArray(dbCache.sowingSeasons) ? dbCache.sowingSeasons : [],
+  });
+}
+
+async function refreshSharedBotConfigFromMySql(force) {
+  if (!useMySql || !dbPool) return false;
+
+  try {
+    const row = await readSharedBotConfigRow();
+    if (!row) return false;
+
+    const updatedAtMs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+    if (!force && updatedAtMs && updatedAtMs <= sharedConfigUpdatedAt) return false;
+
+    mergeRemoteSharedConfigIntoCache(JSON.parse(row.config_value));
+    sharedConfigUpdatedAt = updatedAtMs || Date.now();
+    return true;
+  } catch (err) {
+    console.log('Shared bot config refresh error:', err.message);
+    return false;
+  }
+}
 
 async function persistDbCache() {
   if (!useMySql || !dbPool) return;
+
+  let payload = mergeDbData(dbCache);
+
+  try {
+    const row = await readSharedBotConfigRow();
+    if (row) {
+      const remoteData = mergeDbData(JSON.parse(row.config_value));
+      payload = mergeDbData({
+        ...remoteData,
+        ticketBlacklist: payload.ticketBlacklist,
+        ticketSubmissions: payload.ticketSubmissions,
+        ticketRecords: payload.ticketRecords,
+        farmingTasks: payload.farmingTasks,
+        farmingFields: payload.farmingFields,
+        sowingSeasons: payload.sowingSeasons,
+      });
+    }
+  } catch (err) {
+    console.log('Shared bot config merge before save failed:', err.message);
+  }
 
   await dbPool.query(
     `INSERT INTO bot_config (config_key, config_value)
      VALUES (?, ?)
      ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
-    ['ticket-bot', JSON.stringify(dbCache, null, 2)]
+    ['ticket-bot', JSON.stringify(payload, null, 2)]
   );
+
+  dbCache = payload;
+  sharedConfigUpdatedAt = Date.now();
 }
 
 async function initMySql() {
@@ -352,13 +420,11 @@ async function initMySql() {
       )
     `);
 
-    const [rows] = await dbPool.query(
-      'SELECT config_value FROM bot_config WHERE config_key = ? LIMIT 1',
-      ['ticket-bot']
-    );
+    const row = await readSharedBotConfigRow();
 
-    if (rows.length) {
-      dbCache = mergeDbData(JSON.parse(rows[0].config_value));
+    if (row) {
+      dbCache = mergeDbData(JSON.parse(row.config_value));
+      sharedConfigUpdatedAt = row.updated_at ? new Date(row.updated_at).getTime() : Date.now();
     } else {
       dbCache = readLocalDb();
       await persistDbCache();
@@ -366,6 +432,9 @@ async function initMySql() {
 
     useMySql = true;
     await migrateLegacyTicketBlacklist();
+    setInterval(() => {
+      refreshSharedBotConfigFromMySql(false).catch(() => {});
+    }, 15000);
     console.log('Bot koristi zajednički MySQL storage.');
   } catch (err) {
     console.log('Bot MySQL init error, ostajem na JSON storageu:', err.message);
@@ -2889,6 +2958,7 @@ if (interaction.commandName === 'update-field') {
     interaction.isStringSelectMenu() &&
     interaction.customId === 'ticket_category'
   ) {
+    await refreshSharedBotConfigFromMySql(true);
     const type = interaction.values[0];
     const guild = interaction.guild;
     const member = interaction.member;
@@ -3764,6 +3834,7 @@ if (!task.cropName) {
   // ---------- MODALI (FIELD ADD + SIJANJE + KOMBAJNIRANJE) ----------
   if (interaction.isModalSubmit()) {
     if (interaction.customId.startsWith('ticket_answers:')) {
+      await refreshSharedBotConfigFromMySql(true);
       const [, type] = interaction.customId.split(':');
       const cfg = getTicketConfig();
       const typeCfg = cfg.types[type];
