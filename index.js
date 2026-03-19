@@ -2131,6 +2131,44 @@ function buildTicketQuestionModal(type, typeCfg) {
   return modal;
 }
 
+function buildTicketPanelEmbed(cfg) {
+  const igranjeTitle = cfg?.types?.igranje?.title || 'Igranje na serveru';
+  const zalbaTitle = cfg?.types?.zalba?.title || 'Žalba na igrače';
+  const modoviTitle = cfg?.types?.modovi?.title || 'Edit modova';
+  const pomocTitle = cfg?.types?.pomoc?.title || 'Pomoć';
+
+  return new EmbedBuilder()
+    .setColor('#ffd000')
+    .setTitle('Ticket sustav')
+    .setDescription(
+      [
+        'Molimo vas da pažljivo pročitate ovu poruku prije nego što otvorite tiket.',
+        '',
+        '**Opcije:**',
+        `• **${igranjeTitle}:** zahtjev za pridruživanje serveru i kratki modal upitnik.`,
+        `• **${zalbaTitle}:** prijava igrača koji krši pravila servera.`,
+        `• **${modoviTitle}:** pomoć, ideje ili problemi vezani uz edit modova.`,
+        `• **${pomocTitle}:** pitanja ili problemi za admin tim.`,
+        '',
+        'Nakon odabira opcije otvorit će se modal s pitanjima za tu kategoriju.',
+        '',
+        '**Prije otvaranja tiketa:**',
+        '1. Provjerite jeste li sve instalirali i podesili prema uputama.',
+        '2. Pokušajte sami riješiti problem i provjerite da nije do vaših modova ili klijenta.',
+        '3. Ako ne uspijete, otvorite tiket i detaljno opišite svoj problem.',
+        '4. Budite strpljivi, netko iz tima će vam se javiti čim bude moguće.',
+        '',
+        '**Pravila tiketa:**',
+        '• Svi problemi moraju biti jasno i detaljno opisani, bez poruka tipa "ne radi".',
+        '• Poštujte članove staff tima.',
+        '• Ne pingajte staff bez razloga, netko će vam se javiti.',
+        `• Tiket bez odgovora korisnika ${cfg?.autoCloseHours || 48}h bit će zatvoren.`,
+        '• Ne otvarajte tikete u pogrešnoj kategoriji.',
+        '• Kršenje pravila može rezultirati zatvaranjem tiketa ili sankcijama.',
+      ].join('\n')
+    );
+}
+
 async function saveTicketSubmission({
   guildId,
   userId,
@@ -2633,6 +2671,18 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.isChatInputCommand()) {
     // /ticket-panel
     if (interaction.commandName === 'ticket-panel') {
+      await refreshSharedBotConfigFromMySql(true);
+      const cfg = getTicketConfig();
+      const embed = buildTicketPanelEmbed(cfg);
+      const row = buildTicketCategoryRow();
+
+      await interaction.deferReply({ ephemeral: true });
+      await interaction.deleteReply();
+
+      const channel = interaction.channel;
+      await channel.send({ embeds: [embed], components: [row] });
+      return;
+
       const embed = new EmbedBuilder()
         .setColor('#ffd000')
         .setTitle('Ticket sustav')
