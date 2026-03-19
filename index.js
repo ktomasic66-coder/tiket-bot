@@ -2062,7 +2062,7 @@ function buildPomocTicketModal(typeCfg) {
 
 function buildTicketCategoryRow() {
   const menu = new StringSelectMenuBuilder()
-    .setCustomId('ticket_category')
+    .setCustomId(`ticket_category:${Date.now().toString(36)}`)
     .setPlaceholder('Odaberi vrstu tiketa')
     .addOptions(
       {
@@ -2956,7 +2956,7 @@ if (interaction.commandName === 'update-field') {
   // ---------- KREIRANJE TIKETA (dropdown) ----------
   if (
     interaction.isStringSelectMenu() &&
-    interaction.customId === 'ticket_category'
+    interaction.customId.startsWith('ticket_category')
   ) {
     await refreshSharedBotConfigFromMySql(true);
     const type = interaction.values[0];
