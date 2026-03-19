@@ -2069,7 +2069,7 @@ function buildTicketCategoryRow() {
         label: 'Igranje na serveru',
         description: 'Godine + svako pitanje zasebno u istom modalu.',
         value: 'igranje',
-        emoji: '??',
+        emoji: '🎮',
       },
       {
         label: 'Žalba na igrače',
