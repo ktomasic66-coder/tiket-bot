@@ -285,7 +285,9 @@ function buildPollEmbed(poll) {
     .setDescription(
       [
         `**${poll.title}**`,
+        '',
         poll.description,
+        '',
         isClosed
           ? 'Glasanje je zavrseno. Finalni rezultati su zakljucani ispod.'
           : `Glasanje je otvoreno do ${formatDiscordRelativeTime(poll.endsAt)}.`,
@@ -295,10 +297,11 @@ function buildPollEmbed(poll) {
       ...poll.options.map((option) => ({
         name: `📌 ${option.label}`,
         value: [
-          option.description,
+          `> ${option.description}`,
           '',
-          `Glasova: **${totals[option.id]}** (${getVotePercent(totalVotes, totals[option.id])}%)`,
-          `Napredak: \`${buildVoteBar(getVotePercent(totalVotes, totals[option.id]))}\``,
+          `**Glasova:** ${totals[option.id]} (${getVotePercent(totalVotes, totals[option.id])}%)`,
+          `**Napredak:** \`${buildVoteBar(getVotePercent(totalVotes, totals[option.id]))}\``,
+          '',
         ].join('\n'),
         inline: false,
       })),
@@ -308,14 +311,15 @@ function buildPollEmbed(poll) {
           `Ukupno glasova: **${totalVotes}**`,
           `Trajanje: **${formatDurationLabel(poll.durationMs)}**`,
           leader ? `Vodi: **${leader.label}** (${leader.votes} glasova)` : 'Vodi: jos nema glasova',
+          '',
         ].join('\n'),
         inline: false,
       },
       {
         name: '🧾 Rezultati',
         value: poll.options
-          .map((option) => `• ${option.label}: **${totals[option.id]}** glasova`)
-          .join('\n'),
+          .map((option) => `• **${option.label}**: ${totals[option.id]} glasova`)
+          .join('\n\n'),
         inline: false,
       }
     )
