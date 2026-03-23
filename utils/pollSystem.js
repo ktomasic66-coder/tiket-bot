@@ -303,13 +303,13 @@ function buildPollMessageContent(poll) {
     '',
     isClosed
       ? 'Glasanje je zavrseno. Finalni rezultati su zakljucani ispod.'
-      : `Glasanje je otvoreno do ${formatDiscordRelativeTime(poll.endsAt)}.`,
+      : `Glasanje zavrsava ${formatDiscordRelativeTime(poll.endsAt)}.`,
     '',
     ...poll.options.flatMap((option) => [
       `📌 **${option.label}**`,
       option.description,
       '',
-      `**Glasova:** ${totals[option.id]} (${getVotePercent(totalVotes, totals[option.id])}%)`,
+      `**Glasova:** ${totals[option.id]}`,
       `**Prikaz glasova:** ${buildVoteEmojiLine(totals[option.id])}`,
       '',
     ]),
