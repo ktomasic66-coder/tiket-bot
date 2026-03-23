@@ -14,6 +14,10 @@ const commands = [
     .setDescription('Pokreni glasanje za FS25 mapu u ovom kanalu.'),
 
   new SlashCommandBuilder()
+    .setName('modal')
+    .setDescription('Otvori announcement modal i posalji poruku u ovaj kanal.'),
+
+  new SlashCommandBuilder()
     .setName('add-field')
     .setDescription('Dodaj novo polje u listu za Farming zadatke.')
     .addStringOption((opt) =>

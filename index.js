@@ -36,6 +36,49 @@ function isUnknownInteractionError(error) {
   return error?.code === 10062;
 }
 
+const ANNOUNCEMENT_MODAL_ID = 'announcement_modal_create';
+const ANNOUNCEMENT_ALLOWED_ROLE_IDS = new Set([
+  '1238860450528235550',
+  '1449551727010254858',
+  '863814372610146314',
+]);
+
+function memberHasAnyRole(member, roleIds) {
+  if (!member?.roles?.cache) return false;
+  for (const roleId of roleIds) {
+    if (member.roles.cache.has(roleId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildAnnouncementModal() {
+  const titleInput = new TextInputBuilder()
+    .setCustomId('announcement_title')
+    .setLabel('Naslov')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(120)
+    .setPlaceholder('npr. Vazna obavijest');
+
+  const descriptionInput = new TextInputBuilder()
+    .setCustomId('announcement_description')
+    .setLabel('Opis')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(2000)
+    .setPlaceholder('Upisi announcement poruku...');
+
+  return new ModalBuilder()
+    .setCustomId(ANNOUNCEMENT_MODAL_ID)
+    .setTitle('Announcement')
+    .addComponents(
+      new ActionRowBuilder().addComponents(titleInput),
+      new ActionRowBuilder().addComponents(descriptionInput)
+    );
+}
+
 // 🔹 ENV varijable
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
@@ -2674,6 +2717,18 @@ client.on('messageCreate', (message) => {
 client.on('interactionCreate', async (interaction) => {
   // ---------- SLASH KOMANDE ----------
   if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'modal') {
+      if (!memberHasAnyRole(interaction.member, ANNOUNCEMENT_ALLOWED_ROLE_IDS)) {
+        return interaction.reply({
+          content: 'Samo Admin, Suvlasnik servera i Vlasnik mogu koristiti ovu komandu.',
+          ephemeral: true,
+        });
+      }
+
+      await interaction.showModal(buildAnnouncementModal());
+      return;
+    }
+
     if (interaction.commandName === 'anketa') {
       let repliedToCommand = false;
 
@@ -3893,6 +3948,29 @@ if (!task.cropName) {
 
   // ---------- MODALI (FIELD ADD + SIJANJE + KOMBAJNIRANJE) ----------
   if (interaction.isModalSubmit()) {
+    if (interaction.customId === ANNOUNCEMENT_MODAL_ID) {
+      if (!memberHasAnyRole(interaction.member, ANNOUNCEMENT_ALLOWED_ROLE_IDS)) {
+        return interaction.reply({
+          content: 'Nem as permisiju za slanje ove announcement poruke.',
+          ephemeral: true,
+        });
+      }
+
+      const title = interaction.fields.getTextInputValue('announcement_title').trim();
+      const description = interaction.fields
+        .getTextInputValue('announcement_description')
+        .trim();
+
+      await interaction.channel.send({
+        content: [`**${title}**`, '', description].join('\n'),
+      });
+
+      return interaction.reply({
+        content: 'Announcement poruka je poslana u ovaj kanal.',
+        ephemeral: true,
+      });
+    }
+
     if (await handlePollModal(interaction, client)) {
       return;
     }
