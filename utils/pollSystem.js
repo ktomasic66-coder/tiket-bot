@@ -593,7 +593,7 @@ function getVotePercent(totalVotes, votesForOption) {
 
 function buildVoteBar(percent) {
   const filled = Math.max(0, Math.min(10, Math.round(percent / 10)));
-  return `${'â–ˆ'.repeat(filled)}${'â–‘'.repeat(10 - filled)}`;
+  return `${'\u2588'.repeat(filled)}${'\u2591'.repeat(10 - filled)}`;
 }
 
 function buildVoteEmojiLine(votes) {
@@ -664,10 +664,10 @@ function buildPollMessageContent(poll) {
   const isSingleOptionPoll = poll.options.length === 1;
   const resultLines = isSingleOptionPoll
     ? [
-        `â€¢ **DA**: ${totals.yes || 0} glasova`,
-        `â€¢ **NE**: ${totals.no || 0} glasova`,
+        `\u2022 **DA**: ${totals.yes || 0} glasova`,
+        `\u2022 **NE**: ${totals.no || 0} glasova`,
       ]
-    : poll.options.map((option) => `â€¢ **${option.label}**: ${totals[option.id]} glasova`);
+    : poll.options.map((option) => `\u2022 **${option.label}**: ${totals[option.id]} glasova`);
 
   return [
     '**GLASANJE**',
@@ -681,7 +681,7 @@ function buildPollMessageContent(poll) {
       : `Glasanje zavrsava ${formatDiscordRelativeTime(poll.endsAt)}.`,
     '',
     ...poll.options.flatMap((option) => [
-      `ðŸ“Œ **${option.label}**`,
+      `\u{1F4CC} **${option.label}**`,
       option.description,
       '',
       ...(isSingleOptionPoll
@@ -937,7 +937,7 @@ async function handlePollButton(interaction, client) {
       await safeReply(
         interaction,
         {
-          content: 'NemÃ¡Å¡ permisiju za kreiranje anketa.',
+          content: 'Nemaš permisiju za kreiranje anketa.',
           flags: MessageFlags.Ephemeral,
         },
         'ANKETA PERMISSION ERROR'
