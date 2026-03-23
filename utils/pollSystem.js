@@ -76,6 +76,10 @@ function buildPollPanelRow() {
   );
 }
 
+function buildPollAnnouncementContent(poll) {
+  return `<@&${PLAYER_ROLE_ID}>\n${buildPollMessageContent(poll)}`;
+}
+
 function buildPollStepOneModal() {
   return new ModalBuilder()
     .setCustomId(POLL_CREATE_STEP_ONE_MODAL_ID)
@@ -724,7 +728,7 @@ async function handlePollModal(interaction, client) {
       };
 
       const pollMessage = await interaction.channel.send({
-        content: buildPollMessageContent(simplePoll),
+        content: buildPollAnnouncementContent(simplePoll),
         components: [buildPollButtons(simplePoll)],
       });
 
@@ -792,7 +796,7 @@ async function handlePollModal(interaction, client) {
   }
 
   const pollMessage = await interaction.channel.send({
-    content: buildPollMessageContent(poll),
+    content: buildPollAnnouncementContent(poll),
     components: [buildPollButtons(poll)],
   });
 
