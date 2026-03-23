@@ -30,7 +30,13 @@ const {
 } = require('discord.js');
 
 const commands = require('./commands');
-const { postPollPanel, handlePollButton, handlePollModal } = require('./utils/pollSystem');
+const {
+  postPollPanel,
+  handlePollButton,
+  handlePollModal,
+  initPollStorage,
+  restoreActivePolls,
+} = require('./utils/pollSystem');
 
 function isUnknownInteractionError(error) {
   return error?.code === 10062;
@@ -1893,6 +1899,13 @@ const client = new Client({
 
 client.once('ready', async () => {
   console.log(`✅ Bot je online kao ${client.user.tag}`);
+
+  try {
+    await initPollStorage(dbPool);
+    await restoreActivePolls(client);
+  } catch (err) {
+    console.log('Poll MySQL init/restore error:', err.message);
+  }
 
   // 🌾 AUTOMATSKO OBNAVLJANJE SEZONE SJETVE PRI STARTU BOTA
   try {
@@ -4437,7 +4450,6 @@ client.login(token).catch((err) => {
   console.error('❌ Login error:', err);
   
 });
-
 
 
 

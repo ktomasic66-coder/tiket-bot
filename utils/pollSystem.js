@@ -1,4 +1,4 @@
-const {
+﻿const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -25,6 +25,7 @@ const ADMIN_ROLE_IDS = new Set([
 
 const activePolls = new Map();
 const pendingPollDrafts = new Map();
+let pollDb = null;
 const POLL_OPTION_STEP_CONFIGS = [
   { step: 2, modalId: 'poll_create_step_two', optionNumbers: [2, 3] },
   { step: 3, modalId: 'poll_create_step_three', optionNumbers: [4, 5] },
@@ -59,18 +60,75 @@ function canUsePollPanel(member) {
   return memberHasRole(member, PLAYER_ROLE_ID);
 }
 
+function getPollDb() {
+  return pollDb;
+}
+
+async function initPollStorage(dbPool) {
+  pollDb = dbPool || null;
+  if (!pollDb) {
+    return;
+  }
+
+  await pollDb.query(`
+    CREATE TABLE IF NOT EXISTS polls (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      message_id VARCHAR(40) NOT NULL,
+      channel_id VARCHAR(40) NOT NULL,
+      guild_id VARCHAR(40) NULL,
+      created_by VARCHAR(40) NOT NULL,
+      title VARCHAR(120) NOT NULL,
+      description TEXT NOT NULL,
+      duration_ms BIGINT UNSIGNED NOT NULL,
+      ends_at BIGINT UNSIGNED NOT NULL,
+      closed TINYINT(1) NOT NULL DEFAULT 0,
+      results_posted TINYINT(1) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      closed_at TIMESTAMP NULL DEFAULT NULL,
+      UNIQUE KEY uniq_polls_message_id (message_id),
+      KEY idx_polls_active (closed, ends_at)
+    )
+  `);
+
+  await pollDb.query(`
+    CREATE TABLE IF NOT EXISTS poll_options (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      poll_id BIGINT UNSIGNED NOT NULL,
+      option_id VARCHAR(40) NOT NULL,
+      label VARCHAR(120) NOT NULL,
+      description TEXT NULL,
+      style INT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      UNIQUE KEY uniq_poll_option (poll_id, option_id),
+      KEY idx_poll_options_poll_id (poll_id)
+    )
+  `);
+
+  await pollDb.query(`
+    CREATE TABLE IF NOT EXISTS poll_votes (
+      poll_id BIGINT UNSIGNED NOT NULL,
+      user_id VARCHAR(40) NOT NULL,
+      option_id VARCHAR(40) NOT NULL,
+      voted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (poll_id, user_id),
+      KEY idx_poll_votes_option (poll_id, option_id)
+    )
+  `);
+}
+
 function buildPollPanelContent() {
   return [
     '**ANKETE**',
     '',
-    'Ovdje možeš kreirati ankete za mape, modove i ostale važne odluke na serveru.',
+    'Ovdje mo\u017ee\u0161 kreirati ankete za mape, modove i ostale va\u017ene odluke na serveru.',
     '',
-    '• Svaki član može glasati samo jednom',
-    '• Promjena glasa je moguća dok anketa traje',
-    '• Rezultati se ažuriraju uživo nakon svakog glasa',
-    '• Po isteku vremena glasanje se automatski zatvara',
+    '\u2022 Svaki \u010dlan mo\u017ee glasati samo jednom',
+    '\u2022 Promjena glasa je mogu\u0107a dok anketa traje',
+    '\u2022 Rezultati se a\u017euriraju u\u017eivo nakon svakog glasa',
+    '\u2022 Po isteku vremena glasanje se automatski zatvara',
+    '\u2022 \u010clan koji je predlo\u017eio svoju mapu ne mo\u017ee glasati za vlastiti prijedlog, ve\u0107 za ostale ponu\u0111ene opcije',
     '',
-    'Klikni na **Kreiraj anketu** za početak.',
+    'Klikni na **Kreiraj anketu** za po\u010detak.',
   ].join('\n');
 }
 
@@ -274,6 +332,215 @@ function normalizeOption(option, index) {
   };
 }
 
+function createPollState(data) {
+  return {
+    id: data.id || null,
+    title: data.title,
+    description: data.description,
+    durationMs: data.durationMs,
+    options: data.options,
+    votes: data.votes || new Map(),
+    endsAt: data.endsAt,
+    closed: Boolean(data.closed),
+    resultsPosted: Boolean(data.resultsPosted),
+    timeout: data.timeout || null,
+    messageId: data.messageId || null,
+    channelId: data.channelId || null,
+    guildId: data.guildId || null,
+    createdBy: data.createdBy || null,
+  };
+}
+
+async function savePollToDb(poll) {
+  const db = getPollDb();
+  if (!db) {
+    return poll;
+  }
+
+  const [result] = await db.query(
+    `INSERT INTO polls (
+      message_id,
+      channel_id,
+      guild_id,
+      created_by,
+      title,
+      description,
+      duration_ms,
+      ends_at,
+      closed,
+      results_posted
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      poll.messageId,
+      poll.channelId,
+      poll.guildId || null,
+      poll.createdBy,
+      poll.title,
+      poll.description,
+      poll.durationMs,
+      poll.endsAt,
+      poll.closed ? 1 : 0,
+      poll.resultsPosted ? 1 : 0,
+    ]
+  );
+
+  poll.id = result.insertId;
+
+  for (const [index, option] of poll.options.entries()) {
+    await db.query(
+      `INSERT INTO poll_options (poll_id, option_id, label, description, style, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [poll.id, option.id, option.label, option.description || '', Number(option.style), index]
+    );
+  }
+
+  return poll;
+}
+
+async function persistPollVote(poll, userId, optionId) {
+  const db = getPollDb();
+  if (!db || !poll.id) {
+    return;
+  }
+
+  await db.query(
+    `INSERT INTO poll_votes (poll_id, user_id, option_id)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       option_id = VALUES(option_id),
+       voted_at = CURRENT_TIMESTAMP`,
+    [poll.id, String(userId), optionId]
+  );
+}
+
+async function markPollClosedInDb(poll) {
+  const db = getPollDb();
+  if (!db || !poll.id) {
+    return;
+  }
+
+  await db.query(
+    `UPDATE polls
+     SET closed = 1,
+         closed_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [poll.id]
+  );
+}
+
+async function markPollResultsPostedInDb(poll) {
+  const db = getPollDb();
+  if (!db || !poll.id) {
+    return;
+  }
+
+  await db.query(
+    `UPDATE polls
+     SET results_posted = 1
+     WHERE id = ?`,
+    [poll.id]
+  );
+}
+
+function hydratePoll(row, optionRows, voteRows) {
+  return createPollState({
+    id: Number(row.id),
+    title: row.title,
+    description: row.description,
+    durationMs: Number(row.duration_ms),
+    options: optionRows
+      .sort((a, b) => Number(a.sort_order) - Number(b.sort_order))
+      .map((option) => ({
+        id: option.option_id,
+        label: option.label,
+        description: option.description,
+        style: Number(option.style),
+      })),
+    votes: new Map(voteRows.map((vote) => [vote.user_id, vote.option_id])),
+    endsAt: Number(row.ends_at),
+    closed: Boolean(row.closed),
+    resultsPosted: Boolean(row.results_posted),
+    messageId: row.message_id,
+    channelId: row.channel_id,
+    guildId: row.guild_id,
+    createdBy: row.created_by,
+  });
+}
+
+async function loadPollFromDb(messageId) {
+  const db = getPollDb();
+  if (!db) {
+    return null;
+  }
+
+  const [pollRows] = await db.query(`SELECT * FROM polls WHERE message_id = ? LIMIT 1`, [messageId]);
+  const row = pollRows[0];
+  if (!row) {
+    return null;
+  }
+
+  const [optionRows] = await db.query(
+    `SELECT option_id, label, description, style, sort_order
+     FROM poll_options
+     WHERE poll_id = ?
+     ORDER BY sort_order ASC, id ASC`,
+    [row.id]
+  );
+  const [voteRows] = await db.query(
+    `SELECT user_id, option_id
+     FROM poll_votes
+     WHERE poll_id = ?`,
+    [row.id]
+  );
+
+  return hydratePoll(row, optionRows, voteRows);
+}
+
+async function getPollByMessageId(messageId) {
+  const cachedPoll = activePolls.get(messageId);
+  if (cachedPoll) {
+    return cachedPoll;
+  }
+
+  const storedPoll = await loadPollFromDb(messageId);
+  if (storedPoll && !storedPoll.closed) {
+    activePolls.set(messageId, storedPoll);
+  }
+
+  return storedPoll;
+}
+
+async function restoreActivePolls(client) {
+  const db = getPollDb();
+  if (!db) {
+    return;
+  }
+
+  const [pollRows] = await db.query(
+    `SELECT *
+     FROM polls
+     WHERE closed = 0 OR results_posted = 0`
+  );
+
+  for (const row of pollRows) {
+    const poll = await loadPollFromDb(row.message_id);
+    if (!poll) {
+      continue;
+    }
+
+    if (!poll.closed) {
+      activePolls.set(poll.messageId, poll);
+    }
+
+    if (poll.closed || Date.now() >= poll.endsAt) {
+      await finalizePoll(client, poll.messageId);
+      continue;
+    }
+
+    schedulePollEnd(client, poll);
+  }
+}
+
 function hasDuplicateOptionTitles(options) {
   const labels = options.map((option) => option.label.trim().toLowerCase());
   return new Set(labels).size !== labels.length;
@@ -289,6 +556,20 @@ function getVoteTotals(poll) {
   }
 
   return totals;
+}
+
+function getVotesByOption(poll) {
+  const groupedVotes = new Map(getVotingOptions(poll).map((option) => [option.id, []]));
+
+  for (const [userId, optionId] of poll.votes.entries()) {
+    if (!groupedVotes.has(optionId)) {
+      continue;
+    }
+
+    groupedVotes.get(optionId).push(userId);
+  }
+
+  return groupedVotes;
 }
 
 function getVotingOptions(poll) {
@@ -312,7 +593,7 @@ function getVotePercent(totalVotes, votesForOption) {
 
 function buildVoteBar(percent) {
   const filled = Math.max(0, Math.min(10, Math.round(percent / 10)));
-  return `${'█'.repeat(filled)}${'░'.repeat(10 - filled)}`;
+  return `${'â–ˆ'.repeat(filled)}${'â–‘'.repeat(10 - filled)}`;
 }
 
 function buildVoteEmojiLine(votes) {
@@ -358,6 +639,23 @@ function buildPollButtons(poll, { disabled = false } = {}) {
   return row;
 }
 
+function buildPollResultsSummary(poll) {
+  const groupedVotes = getVotesByOption(poll);
+  const lines = ['\u{1F4CA} Glasanje zavr\u0161eno! Rezultati ispod:', ''];
+
+  for (const option of getVotingOptions(poll)) {
+    const voterIds = groupedVotes.get(option.id) || [];
+    const voterLine = voterIds.length
+      ? voterIds.map((userId) => `<@${userId}>`).join(', ')
+      : 'Nitko nije glasao';
+
+    lines.push(`Opcija: "${option.label}" ${voterLine}`);
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+}
+
 function buildPollMessageContent(poll) {
   const totals = getVoteTotals(poll);
   const totalVotes = poll.votes.size;
@@ -366,10 +664,10 @@ function buildPollMessageContent(poll) {
   const isSingleOptionPoll = poll.options.length === 1;
   const resultLines = isSingleOptionPoll
     ? [
-        `• **DA**: ${totals.yes || 0} glasova`,
-        `• **NE**: ${totals.no || 0} glasova`,
+        `â€¢ **DA**: ${totals.yes || 0} glasova`,
+        `â€¢ **NE**: ${totals.no || 0} glasova`,
       ]
-    : poll.options.map((option) => `• **${option.label}**: ${totals[option.id]} glasova`);
+    : poll.options.map((option) => `â€¢ **${option.label}**: ${totals[option.id]} glasova`);
 
   return [
     '**GLASANJE**',
@@ -383,7 +681,7 @@ function buildPollMessageContent(poll) {
       : `Glasanje zavrsava ${formatDiscordRelativeTime(poll.endsAt)}.`,
     '',
     ...poll.options.flatMap((option) => [
-      `📌 **${option.label}**`,
+      `ðŸ“Œ **${option.label}**`,
       option.description,
       '',
       ...(isSingleOptionPoll
@@ -470,7 +768,7 @@ function buildPollFromDraft(draft) {
 
   const endsAt = Date.now() + draft.durationMs;
 
-  return {
+  return createPollState({
     title: draft.title,
     description: draft.description,
     durationMs: draft.durationMs,
@@ -478,36 +776,72 @@ function buildPollFromDraft(draft) {
     votes: new Map(),
     endsAt,
     closed: false,
+    resultsPosted: false,
     timeout: null,
-  };
+  });
 }
 
 async function finalizePoll(client, messageId) {
-  const poll = activePolls.get(messageId);
-  if (!poll || poll.closed) {
+  const poll = await getPollByMessageId(messageId);
+  if (!poll || (poll.closed && poll.resultsPosted)) {
     return;
   }
 
-  poll.closed = true;
+  if (!poll.closed) {
+    poll.closed = true;
 
-  if (poll.timeout) {
-    clearTimeout(poll.timeout);
-    poll.timeout = null;
+    if (poll.timeout) {
+      clearTimeout(poll.timeout);
+      poll.timeout = null;
+    }
+
+    try {
+      await markPollClosedInDb(poll);
+    } catch (error) {
+      console.error('ANKETA DB CLOSE ERROR:', error);
+    }
+  }
+
+  let channel = null;
+
+  if (!poll.resultsPosted) {
+    try {
+      channel = await client.channels.fetch(poll.channelId);
+      if (!channel || !channel.isTextBased()) {
+        return;
+      }
+
+      const message = await channel.messages.fetch(messageId);
+      await message.edit({
+        content: buildPollMessageContent(poll),
+        components: [buildPollButtons(poll, { disabled: true })],
+      });
+    } catch (error) {
+      console.error('ANKETA FINALIZE ERROR:', error);
+    }
+  }
+
+  if (!channel) {
+    try {
+      channel = await client.channels.fetch(poll.channelId);
+    } catch (error) {
+      console.error('ANKETA CHANNEL FETCH ERROR:', error);
+    }
+  }
+
+  if (!channel || !channel.isTextBased() || poll.resultsPosted) {
+    return;
   }
 
   try {
-    const channel = await client.channels.fetch(poll.channelId);
-    if (!channel || !channel.isTextBased()) {
-      return;
-    }
-
-    const message = await channel.messages.fetch(messageId);
-    await message.edit({
-      content: buildPollMessageContent(poll),
-      components: [buildPollButtons(poll, { disabled: true })],
+    await channel.send({
+      content: buildPollResultsSummary(poll),
     });
+    poll.resultsPosted = true;
+    await markPollResultsPostedInDb(poll);
+    activePolls.delete(messageId);
   } catch (error) {
-    console.error('ANKETA FINALIZE ERROR:', error);
+    console.error('ANKETA RESULTS SEND ERROR:', error);
   }
 }
 
@@ -603,7 +937,7 @@ async function handlePollButton(interaction, client) {
       await safeReply(
         interaction,
         {
-          content: 'Nemáš permisiju za kreiranje anketa.',
+          content: 'NemÃ¡Å¡ permisiju za kreiranje anketa.',
           flags: MessageFlags.Ephemeral,
         },
         'ANKETA PERMISSION ERROR'
@@ -665,6 +999,22 @@ async function handlePollButton(interaction, client) {
     poll.channelId = interaction.channelId;
     poll.guildId = interaction.guildId;
     poll.createdBy = interaction.user.id;
+
+    try {
+      await savePollToDb(poll);
+    } catch (error) {
+      console.error('ANKETA DB CREATE ERROR:', error);
+      await pollMessage.delete().catch(() => {});
+      await safeReply(
+        interaction,
+        {
+          content: 'Anketa nije spremljena u bazu pa nije objavljena. Pokusaj ponovo.',
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA DB CREATE REPLY ERROR'
+      );
+      return true;
+    }
 
     activePolls.set(pollMessage.id, poll);
     pendingPollDrafts.delete(interaction.user.id);
@@ -732,12 +1082,12 @@ async function handlePollButton(interaction, client) {
     return false;
   }
 
-  const poll = activePolls.get(interaction.message.id);
+  const poll = await getPollByMessageId(interaction.message.id);
   if (!poll) {
     await safeReply(
       interaction,
       {
-        content: 'Ova anketa vise nije aktivna ili je restart bota ocistio stanje iz memorije.',
+        content: 'Ova anketa vise nije aktivna ili nije pronadena u bazi.',
         flags: MessageFlags.Ephemeral,
       },
       'ANKETA STATE ERROR'
@@ -777,6 +1127,27 @@ async function handlePollButton(interaction, client) {
 
   const previousVote = poll.votes.get(interaction.user.id);
   poll.votes.set(interaction.user.id, selectedOption.id);
+
+  try {
+    await persistPollVote(poll, interaction.user.id, selectedOption.id);
+  } catch (error) {
+    console.error('ANKETA DB VOTE ERROR:', error);
+    if (previousVote) {
+      poll.votes.set(interaction.user.id, previousVote);
+    } else {
+      poll.votes.delete(interaction.user.id);
+    }
+
+    await safeReply(
+      interaction,
+      {
+        content: 'Dogodila se greska pri spremanju glasa u bazu. Pokusaj ponovo.',
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA DB VOTE SAVE ERROR'
+    );
+    return true;
+  }
 
   const updated = await safeUpdate(
     interaction,
@@ -836,7 +1207,7 @@ async function handlePollModal(interaction, client) {
     });
 
     if (!canUseAdvancedPollSetup(interaction.member)) {
-      const simplePoll = {
+      const simplePoll = createPollState({
         title: draft.title,
         description: draft.description,
         durationMs: draft.durationMs,
@@ -844,8 +1215,9 @@ async function handlePollModal(interaction, client) {
         votes: new Map(),
         endsAt: Date.now() + draft.durationMs,
         closed: false,
+        resultsPosted: false,
         timeout: null,
-      };
+      });
 
       const pollMessage = await interaction.channel.send({
         content: buildPollAnnouncementContent(simplePoll),
@@ -856,6 +1228,22 @@ async function handlePollModal(interaction, client) {
       simplePoll.channelId = interaction.channelId;
       simplePoll.guildId = interaction.guildId;
       simplePoll.createdBy = interaction.user.id;
+
+      try {
+        await savePollToDb(simplePoll);
+      } catch (error) {
+        console.error('ANKETA SIMPLE DB CREATE ERROR:', error);
+        await pollMessage.delete().catch(() => {});
+        await safeReply(
+          interaction,
+          {
+            content: 'Anketa nije spremljena u bazu pa nije objavljena. Pokusaj ponovo.',
+            flags: MessageFlags.Ephemeral,
+          },
+          'ANKETA SIMPLE DB CREATE REPLY ERROR'
+        );
+        return true;
+      }
 
       activePolls.set(pollMessage.id, simplePoll);
       pendingPollDrafts.delete(interaction.user.id);
@@ -962,6 +1350,22 @@ async function handlePollModal(interaction, client) {
   poll.guildId = interaction.guildId;
   poll.createdBy = interaction.user.id;
 
+  try {
+    await savePollToDb(poll);
+  } catch (error) {
+    console.error('ANKETA FINAL STEP DB CREATE ERROR:', error);
+    await pollMessage.delete().catch(() => {});
+    await safeReply(
+      interaction,
+      {
+        content: 'Anketa nije spremljena u bazu pa nije objavljena. Pokusaj ponovo.',
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA FINAL STEP DB CREATE REPLY ERROR'
+    );
+    return true;
+  }
+
   activePolls.set(pollMessage.id, poll);
   pendingPollDrafts.delete(interaction.user.id);
   schedulePollEnd(client, poll);
@@ -981,5 +1385,8 @@ async function handlePollModal(interaction, client) {
 module.exports = {
   handlePollButton,
   handlePollModal,
+  initPollStorage,
   postPollPanel,
+  restoreActivePolls,
 };
+
