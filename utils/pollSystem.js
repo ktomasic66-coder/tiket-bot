@@ -138,7 +138,7 @@ function buildContinueSetupRow(userId) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`${POLL_CONTINUE_BUTTON_PREFIX}${userId}`)
-      .setLabel('Nastavi unos')
+      .setLabel('Otvori korak 2')
       .setStyle(ButtonStyle.Primary)
   );
 }
@@ -228,6 +228,31 @@ function getVoteTotals(poll) {
   return totals;
 }
 
+function getVotePercent(totalVotes, votesForOption) {
+  if (!totalVotes) {
+    return 0;
+  }
+
+  return Math.round((votesForOption / totalVotes) * 100);
+}
+
+function buildVoteBar(percent) {
+  const filled = Math.max(0, Math.min(10, Math.round(percent / 10)));
+  return `${'█'.repeat(filled)}${'░'.repeat(10 - filled)}`;
+}
+
+function getLeadingOption(poll, totals) {
+  return poll.options.reduce((best, option) => {
+    const votes = totals[option.id];
+
+    if (!best || votes > best.votes) {
+      return { label: option.label, votes };
+    }
+
+    return best;
+  }, null);
+}
+
 function buildPollButtons(poll, { disabled = false } = {}) {
   const row = new ActionRowBuilder();
 
@@ -248,35 +273,50 @@ function buildPollEmbed(poll) {
   const totals = getVoteTotals(poll);
   const totalVotes = poll.votes.size;
   const isClosed = poll.closed || Date.now() >= poll.endsAt;
+  const leader = getLeadingOption(poll, totals);
 
   return new EmbedBuilder()
-    .setColor(isClosed ? 0x6b7280 : 0x84cc16)
+    .setColor(isClosed ? 0x64748b : 0xf59e0b)
     .setTitle('GLASANJE')
     .setDescription(
       [
         `**${poll.title}**`,
         poll.description,
         isClosed
-          ? 'Anketa je zavrsena. Finalni rezultati ostaju vidljivi ispod.'
-          : `Glasanje traje do ${formatDiscordRelativeTime(poll.endsAt)}.`,
+          ? 'Glasanje je zavrseno. Finalni rezultati su zakljucani ispod.'
+          : `Glasanje je otvoreno do ${formatDiscordRelativeTime(poll.endsAt)}.`,
       ].join('\n\n')
     )
     .addFields(
       ...poll.options.map((option) => ({
-        name: option.label,
-        value: `${option.description}\n\nGlasova: **${totals[option.id]}**`,
+        name: `📌 ${option.label}`,
+        value: [
+          option.description,
+          '',
+          `Glasova: **${totals[option.id]}** (${getVotePercent(totalVotes, totals[option.id])}%)`,
+          `Napredak: \`${buildVoteBar(getVotePercent(totalVotes, totals[option.id]))}\``,
+        ].join('\n'),
         inline: false,
       })),
       {
-        name: 'Rezultati',
+        name: '📊 Pregled',
+        value: [
+          `Ukupno glasova: **${totalVotes}**`,
+          `Trajanje: **${formatDurationLabel(poll.durationMs)}**`,
+          leader ? `Vodi: **${leader.label}** (${leader.votes} glasova)` : 'Vodi: jos nema glasova',
+        ].join('\n'),
+        inline: false,
+      },
+      {
+        name: '🧾 Rezultati',
         value: poll.options
-          .map((option) => `${option.label} - ${totals[option.id]} glasova`)
+          .map((option) => `• ${option.label}: **${totals[option.id]}** glasova`)
           .join('\n'),
         inline: false,
       }
     )
     .setFooter({
-      text: `Ukupno glasova: ${totalVotes} | Trajanje: ${formatDurationLabel(poll.durationMs)} | Jedan korisnik moze imati samo jedan aktivan glas`,
+      text: 'Jedan korisnik moze imati samo jedan aktivan glas',
     })
     .setTimestamp();
 }
@@ -537,7 +577,7 @@ async function handlePollModal(interaction, client) {
 
     await interaction.reply({
       content:
-        'Prvi korak je spremljen. Klikni na dugme ispod za unos ostalih opcija i zavrsetak ankete.',
+        'Korak 1 je spremljen. Klikni ispod za otvaranje drugog modala i dovrsi unos ankete.',
       components: [buildContinueSetupRow(interaction.user.id)],
       flags: MessageFlags.Ephemeral,
     });
