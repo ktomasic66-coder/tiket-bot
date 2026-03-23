@@ -16,12 +16,40 @@ const POLL_CONTINUE_BUTTON_PREFIX = 'poll_continue_setup:';
 const POLL_BUTTON_PREFIX = 'anketa_vote:';
 const POLL_LOGO_EMOJI = '<:srlogo:1439652081693888544>';
 const POLL_LOGO_EMOJI_MAX = 10;
+const PLAYER_ROLE_ID = '1238209853009297560';
+const ADMIN_ROLE_IDS = new Set([
+  '1238860450528235550',
+  '1449551727010254858',
+  '863814372610146314',
+]);
 
 const activePolls = new Map();
 const pendingPollDrafts = new Map();
 
 function isUnknownInteractionError(error) {
   return error?.code === 10062;
+}
+
+function memberHasRole(member, roleId) {
+  return Boolean(member?.roles?.cache?.has(roleId));
+}
+
+function canUseAdvancedPollSetup(member) {
+  for (const roleId of ADMIN_ROLE_IDS) {
+    if (memberHasRole(member, roleId)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function canUsePollPanel(member) {
+  if (canUseAdvancedPollSetup(member)) {
+    return true;
+  }
+
+  return memberHasRole(member, PLAYER_ROLE_ID);
 }
 
 function buildPollPanelContent() {
@@ -531,6 +559,18 @@ async function safeUpdate(interaction, payload, logLabel) {
 
 async function handlePollButton(interaction, client) {
   if (interaction.customId === POLL_PANEL_BUTTON_ID) {
+    if (!canUsePollPanel(interaction.member)) {
+      await safeReply(
+        interaction,
+        {
+          content: 'Nemáš permisiju za kreiranje anketa.',
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA PERMISSION ERROR'
+      );
+      return true;
+    }
+
     await safeShowPollModal(interaction, buildPollStepOneModal());
     return true;
   }
@@ -670,6 +710,43 @@ async function handlePollModal(interaction, client) {
       channelId: interaction.channelId,
       createdAt: Date.now(),
     });
+
+    if (!canUseAdvancedPollSetup(interaction.member)) {
+      const simplePoll = {
+        title: draft.title,
+        description: draft.description,
+        durationMs: draft.durationMs,
+        options: draft.options.map(normalizeOption),
+        votes: new Map(),
+        endsAt: Date.now() + draft.durationMs,
+        closed: false,
+        timeout: null,
+      };
+
+      const pollMessage = await interaction.channel.send({
+        content: buildPollMessageContent(simplePoll),
+        components: [buildPollButtons(simplePoll)],
+      });
+
+      simplePoll.messageId = pollMessage.id;
+      simplePoll.channelId = interaction.channelId;
+      simplePoll.guildId = interaction.guildId;
+      simplePoll.createdBy = interaction.user.id;
+
+      activePolls.set(pollMessage.id, simplePoll);
+      pendingPollDrafts.delete(interaction.user.id);
+      schedulePollEnd(client, simplePoll);
+
+      await safeReply(
+        interaction,
+        {
+          content: `Anketa **${simplePoll.title}** je uspjesno kreirana i traje ${formatDurationLabel(simplePoll.durationMs)}.`,
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA STEP1 SIMPLE REPLY ERROR'
+      );
+      return true;
+    }
 
     await safeReply(
       interaction,
