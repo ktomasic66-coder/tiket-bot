@@ -42,6 +42,7 @@ const ANNOUNCEMENT_ALLOWED_ROLE_IDS = new Set([
   '1449551727010254858',
   '863814372610146314',
 ]);
+const pendingAnnouncementRoles = new Map();
 
 function memberHasAnyRole(member, roleIds) {
   if (!member?.roles?.cache) return false;
@@ -2725,6 +2726,12 @@ client.on('interactionCreate', async (interaction) => {
         });
       }
 
+      const selectedRole = interaction.options.getRole('uloga');
+      pendingAnnouncementRoles.set(interaction.user.id, {
+        roleId: selectedRole?.id || null,
+        channelId: interaction.channelId,
+      });
+
       await interaction.showModal(buildAnnouncementModal());
       return;
     }
@@ -3960,9 +3967,16 @@ if (!task.cropName) {
       const description = interaction.fields
         .getTextInputValue('announcement_description')
         .trim();
+      const pendingRole = pendingAnnouncementRoles.get(interaction.user.id);
+      const roleLine =
+        pendingRole?.channelId === interaction.channelId && pendingRole?.roleId
+          ? `\n\n<@&${pendingRole.roleId}>`
+          : '';
+
+      pendingAnnouncementRoles.delete(interaction.user.id);
 
       await interaction.channel.send({
-        content: [`**${title}**`, '', description].join('\n'),
+        content: [`**${title}**`, '', description].join('\n') + roleLine,
       });
 
       return interaction.reply({

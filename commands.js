@@ -15,7 +15,13 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('modal')
-    .setDescription('Otvori announcement modal i posalji poruku u ovaj kanal.'),
+    .setDescription('Otvori announcement modal i posalji poruku u ovaj kanal.')
+    .addRoleOption((opt) =>
+      opt
+        .setName('uloga')
+        .setDescription('Opcionalna uloga koja ce biti navedena na dnu poruke')
+        .setRequired(false)
+    ),
 
   new SlashCommandBuilder()
     .setName('add-field')
