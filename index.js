@@ -30,6 +30,7 @@ const {
 } = require('discord.js');
 
 const commands = require('./commands');
+const { postPollPanel, handlePollVote } = require('./utils/pollSystem');
 
 // 🔹 ENV varijable
 const token = process.env.TOKEN;
@@ -2669,6 +2670,15 @@ client.on('messageCreate', (message) => {
 client.on('interactionCreate', async (interaction) => {
   // ---------- SLASH KOMANDE ----------
   if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'anketa') {
+      await interaction.deferReply({ ephemeral: true });
+      await postPollPanel(interaction, client);
+      await interaction.editReply({
+        content: 'Panel za ankete je postavljen u trazeni kanal.',
+      });
+      return;
+    }
+
     // /ticket-panel
     if (interaction.commandName === 'ticket-panel') {
       await refreshSharedBotConfigFromMySql(true);
@@ -3176,6 +3186,10 @@ if (interaction.commandName === 'update-field') {
 
   // ---------- BUTTONI (TICKETI + FARMING) ----------
   if (interaction.isButton()) {
+    if (await handlePollVote(interaction, client)) {
+      return;
+    }
+
     if (interaction.customId.startsWith('ticket_modal_continue:')) {
       const [, type, stepRaw] = interaction.customId.split(':');
       const cfg = getTicketConfig();

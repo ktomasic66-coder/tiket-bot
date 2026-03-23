@@ -10,6 +10,10 @@ const commands = [
     .setDescription('Postavi Farming Simulator 25 panel za kreiranje zadataka u ovaj kanal.'),
 
   new SlashCommandBuilder()
+    .setName('anketa')
+    .setDescription('Pokreni glasanje za FS25 mapu u ovom kanalu.'),
+
+  new SlashCommandBuilder()
     .setName('add-field')
     .setDescription('Dodaj novo polje u listu za Farming zadatke.')
     .addStringOption((opt) =>
