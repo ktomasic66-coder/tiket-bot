@@ -3,49 +3,16 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
 
 const POLL_PANEL_CHANNEL_ID = '1485686826558816296';
 const POLL_DURATION_MS = 24 * 60 * 60 * 1000;
 const POLL_PANEL_BUTTON_ID = 'poll_panel_create';
+const POLL_CREATE_MODAL_ID = 'poll_create_modal';
 const POLL_BUTTON_PREFIX = 'anketa_vote:';
-
-const MAP_OPTIONS = [
-  {
-    key: 'balkanska_dolina',
-    name: 'Balkanska Dolina',
-    description: [
-      'Mala polja, brda i guste sume.',
-      'Idealna za roleplay gameplay i timsku koordinaciju.',
-      'Dobra za opusteniji tempo rada i detaljniju farmu.',
-    ],
-    players: '4-8 igraca',
-    buttonStyle: ButtonStyle.Success,
-    accentColor: 0x2b9348,
-    images: [
-      'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1600&q=80',
-      'https://images.unsplash.com/photo-1472396961693-142e6e269027?auto=format&fit=crop&w=1600&q=80',
-      'https://images.unsplash.com/photo-1500595046743-cd271d694d30?auto=format&fit=crop&w=1600&q=80',
-    ],
-  },
-  {
-    key: 'midwest_usa',
-    name: 'Midwest USA',
-    description: [
-      'Velika ravna polja sa sirokom preglednoscu.',
-      'Napravljen za gameplay sa velikim masinama.',
-      'Odlican izbor za brzu i efikasnu organizaciju farme.',
-    ],
-    players: '6-12 igraca',
-    buttonStyle: ButtonStyle.Primary,
-    accentColor: 0xd97706,
-    images: [
-      'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1600&q=80',
-      'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1600&q=80',
-      'https://images.unsplash.com/photo-1500076656116-558758c991c1?auto=format&fit=crop&w=1600&q=80',
-    ],
-  },
-];
 
 const activePolls = new Map();
 
@@ -67,65 +34,130 @@ function buildPollPanelRow() {
   );
 }
 
-function getVoteTotals(votes) {
-  const totals = Object.fromEntries(MAP_OPTIONS.map((map) => [map.key, 0]));
+function buildPollCreateModal() {
+  const titleInput = new TextInputBuilder()
+    .setCustomId('poll_title')
+    .setLabel('Naslov ankete')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(80)
+    .setPlaceholder('npr. Koju mapu vozimo ovaj vikend?');
 
-  for (const selectedMap of votes.values()) {
-    if (typeof totals[selectedMap] === 'number') {
-      totals[selectedMap] += 1;
-    }
-  }
+  const descriptionInput = new TextInputBuilder()
+    .setCustomId('poll_description')
+    .setLabel('Opis ankete')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(300)
+    .setPlaceholder('Kratko objasni sta se bira i do kada traje glasanje.');
 
-  return totals;
+  const optionOneInput = new TextInputBuilder()
+    .setCustomId('poll_option_1')
+    .setLabel('Opcija 1')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(80)
+    .setPlaceholder('npr. Balkanska Dolina');
+
+  const optionTwoInput = new TextInputBuilder()
+    .setCustomId('poll_option_2')
+    .setLabel('Opcija 2')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(80)
+    .setPlaceholder('npr. Midwest USA');
+
+  const optionThreeInput = new TextInputBuilder()
+    .setCustomId('poll_option_3')
+    .setLabel('Opcija 3 (opcionalno)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(80)
+    .setPlaceholder('npr. Novi mod pack');
+
+  return new ModalBuilder()
+    .setCustomId(POLL_CREATE_MODAL_ID)
+    .setTitle('Kreiranje ankete')
+    .addComponents(
+      new ActionRowBuilder().addComponents(titleInput),
+      new ActionRowBuilder().addComponents(descriptionInput),
+      new ActionRowBuilder().addComponents(optionOneInput),
+      new ActionRowBuilder().addComponents(optionTwoInput),
+      new ActionRowBuilder().addComponents(optionThreeInput)
+    );
 }
 
 function formatDiscordRelativeTime(timestampMs) {
   return `<t:${Math.floor(timestampMs / 1000)}:R>`;
 }
 
-function buildPollButtons({ disabled = false } = {}) {
-  return new ActionRowBuilder().addComponents(
-    ...MAP_OPTIONS.map((map) =>
+function buildButtonStyle(index) {
+  const styles = [
+    ButtonStyle.Success,
+    ButtonStyle.Primary,
+    ButtonStyle.Secondary,
+    ButtonStyle.Danger,
+  ];
+
+  return styles[index] || ButtonStyle.Secondary;
+}
+
+function getVoteTotals(poll) {
+  const totals = Object.fromEntries(poll.options.map((option) => [option.id, 0]));
+
+  for (const selectedOptionId of poll.votes.values()) {
+    if (typeof totals[selectedOptionId] === 'number') {
+      totals[selectedOptionId] += 1;
+    }
+  }
+
+  return totals;
+}
+
+function buildPollButtons(poll, { disabled = false } = {}) {
+  const row = new ActionRowBuilder();
+
+  for (const option of poll.options) {
+    row.addComponents(
       new ButtonBuilder()
-        .setCustomId(`${POLL_BUTTON_PREFIX}${map.key}`)
-        .setLabel(map.name)
-        .setStyle(map.buttonStyle)
+        .setCustomId(`${POLL_BUTTON_PREFIX}${option.id}`)
+        .setLabel(option.label)
+        .setStyle(option.style)
         .setDisabled(disabled)
-    )
-  );
+    );
+  }
+
+  return row;
 }
 
 function buildPollEmbed(poll) {
-  const totals = getVoteTotals(poll.votes);
+  const totals = getVoteTotals(poll);
   const totalVotes = poll.votes.size;
   const isClosed = poll.closed || Date.now() >= poll.endsAt;
 
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(isClosed ? 0x6b7280 : 0x84cc16)
     .setTitle('GLASANJE')
     .setDescription(
       [
-        'Odaberite mapu za sljedecu Farming Simulator 25 multiplayer sesiju.',
+        `**${poll.title}**`,
+        poll.description,
         isClosed
           ? 'Anketa je zavrsena. Finalni rezultati ostaju vidljivi ispod.'
           : `Glasanje je aktivno jos ${formatDiscordRelativeTime(poll.endsAt)}.`,
       ].join('\n\n')
     )
     .addFields(
-      ...MAP_OPTIONS.map((map) => ({
-        name: map.name,
-        value: [
-          ...map.description.map((line) => `- ${line}`),
-          `- Preporuceno: ${map.players}`,
-          `- Trenutno glasova: **${totals[map.key]}**`,
-        ].join('\n'),
+      ...poll.options.map((option) => ({
+        name: option.label,
+        value: `${totals[option.id]} glasova`,
         inline: false,
       })),
       {
         name: 'Rezultati',
-        value: MAP_OPTIONS.map(
-          (map) => `${map.name} - ${totals[map.key]} glasova`
-        ).join('\n'),
+        value: poll.options
+          .map((option) => `${option.label} - ${totals[option.id]} glasova`)
+          .join('\n'),
         inline: false,
       }
     )
@@ -133,25 +165,6 @@ function buildPollEmbed(poll) {
       text: `Ukupno glasova: ${totalVotes} | Jedan korisnik moze imati samo jedan aktivan glas`,
     })
     .setTimestamp();
-
-  return embed;
-}
-
-function buildMapImagePayloads() {
-  return MAP_OPTIONS.map((map) => ({
-    content: `**${map.name} - pregled mape**`,
-    embeds: map.images.map((imageUrl, index) =>
-      new EmbedBuilder()
-        .setColor(map.accentColor)
-        .setTitle(index === 0 ? map.name : `${map.name} - kadar ${index + 1}`)
-        .setDescription(
-          index === 0
-            ? `${map.players} | ${map.description[0]}`
-            : 'Vizualni pregled mape za glasanje.'
-        )
-        .setImage(imageUrl)
-    ),
-  }));
 }
 
 async function finalizePoll(client, messageId) {
@@ -176,7 +189,7 @@ async function finalizePoll(client, messageId) {
     const message = await channel.messages.fetch(messageId);
     await message.edit({
       embeds: [buildPollEmbed(poll)],
-      components: [buildPollButtons({ disabled: true })],
+      components: [buildPollButtons(poll, { disabled: true })],
     });
   } catch (error) {
     console.error('ANKETA FINALIZE ERROR:', error);
@@ -192,40 +205,35 @@ function schedulePollEnd(client, poll) {
   }, remainingMs);
 }
 
-async function createMapPoll(interaction, client) {
-  // Jedan timestamp koristimo i za prikaz i za automatsko zatvaranje ankete.
-  const endsAt = Date.now() + POLL_DURATION_MS;
+function buildPollFromModal(interaction) {
+  const title = interaction.fields.getTextInputValue('poll_title').trim();
+  const description = interaction.fields.getTextInputValue('poll_description').trim();
+  const optionLabels = [
+    interaction.fields.getTextInputValue('poll_option_1').trim(),
+    interaction.fields.getTextInputValue('poll_option_2').trim(),
+    interaction.fields.getTextInputValue('poll_option_3').trim(),
+  ].filter(Boolean);
 
-  const pollMessage = await interaction.channel.send({
-    embeds: [
-      buildPollEmbed({
-        votes: new Map(),
-        endsAt,
-        closed: false,
-      }),
-    ],
-    components: [buildPollButtons()],
-  });
-
-  for (const payload of buildMapImagePayloads()) {
-    await interaction.channel.send(payload);
+  const uniqueLabels = [...new Set(optionLabels.map((label) => label.toLowerCase()))];
+  if (uniqueLabels.length !== optionLabels.length) {
+    return null;
   }
 
-  const poll = {
-    messageId: pollMessage.id,
-    channelId: interaction.channelId,
-    guildId: interaction.guildId,
-    createdBy: interaction.user.id,
+  const endsAt = Date.now() + POLL_DURATION_MS;
+
+  return {
+    title,
+    description,
+    options: optionLabels.map((label, index) => ({
+      id: `option_${index + 1}`,
+      label,
+      style: buildButtonStyle(index),
+    })),
     votes: new Map(),
     endsAt,
     closed: false,
     timeout: null,
   };
-
-  activePolls.set(pollMessage.id, poll);
-  schedulePollEnd(client, poll);
-
-  return pollMessage;
 }
 
 async function postPollPanel(interaction, client) {
@@ -241,16 +249,13 @@ async function postPollPanel(interaction, client) {
   });
 }
 
-async function handlePollVote(interaction, client) {
-  if (interaction.isButton() && interaction.customId === POLL_PANEL_BUTTON_ID) {
-    await interaction.reply({
-      content: 'Primjer panela je postavljen. Funkcija za kreiranje ankete ide u sljedecem koraku.',
-      ephemeral: true,
-    });
+async function handlePollButton(interaction, client) {
+  if (interaction.customId === POLL_PANEL_BUTTON_ID) {
+    await interaction.showModal(buildPollCreateModal());
     return true;
   }
 
-  if (!interaction.isButton() || !interaction.customId.startsWith(POLL_BUTTON_PREFIX)) {
+  if (!interaction.customId.startsWith(POLL_BUTTON_PREFIX)) {
     return false;
   }
 
@@ -272,10 +277,10 @@ async function handlePollVote(interaction, client) {
     return true;
   }
 
-  const selectedMapKey = interaction.customId.slice(POLL_BUTTON_PREFIX.length);
-  const selectedMap = MAP_OPTIONS.find((map) => map.key === selectedMapKey);
+  const selectedOptionId = interaction.customId.slice(POLL_BUTTON_PREFIX.length);
+  const selectedOption = poll.options.find((option) => option.id === selectedOptionId);
 
-  if (!selectedMap) {
+  if (!selectedOption) {
     await interaction.reply({
       content: 'Odabrana opcija nije prepoznata.',
       ephemeral: true,
@@ -284,21 +289,56 @@ async function handlePollVote(interaction, client) {
   }
 
   const previousVote = poll.votes.get(interaction.user.id);
-  poll.votes.set(interaction.user.id, selectedMap.key);
+  poll.votes.set(interaction.user.id, selectedOption.id);
 
-  // Svaki klik odmah osvjezava glavni embed kako bi rezultati ostali live.
   await interaction.update({
     embeds: [buildPollEmbed(poll)],
-    components: [buildPollButtons()],
+    components: [buildPollButtons(poll)],
   });
 
   await interaction.followUp({
     content:
-      previousVote && previousVote !== selectedMap.key
-        ? `Tvoj glas je prebacen na **${selectedMap.name}**.`
-        : previousVote === selectedMap.key
-          ? `Tvoj glas za **${selectedMap.name}** je vec zabiljezen.`
-          : `Tvoj glas za **${selectedMap.name}** je uspjesno zabiljezen.`,
+      previousVote && previousVote !== selectedOption.id
+        ? `Tvoj glas je prebacen na **${selectedOption.label}**.`
+        : previousVote === selectedOption.id
+          ? `Tvoj glas za **${selectedOption.label}** je vec zabiljezen.`
+          : `Tvoj glas za **${selectedOption.label}** je uspjesno zabiljezen.`,
+    ephemeral: true,
+  });
+
+  return true;
+}
+
+async function handlePollModal(interaction, client) {
+  if (!interaction.isModalSubmit() || interaction.customId !== POLL_CREATE_MODAL_ID) {
+    return false;
+  }
+
+  const poll = buildPollFromModal(interaction);
+
+  if (!poll) {
+    await interaction.reply({
+      content: 'Opcije ankete moraju biti razlicite. Promijeni nazive i pokusaj ponovno.',
+      ephemeral: true,
+    });
+    return true;
+  }
+
+  const pollMessage = await interaction.channel.send({
+    embeds: [buildPollEmbed(poll)],
+    components: [buildPollButtons(poll)],
+  });
+
+  poll.messageId = pollMessage.id;
+  poll.channelId = interaction.channelId;
+  poll.guildId = interaction.guildId;
+  poll.createdBy = interaction.user.id;
+
+  activePolls.set(pollMessage.id, poll);
+  schedulePollEnd(client, poll);
+
+  await interaction.reply({
+    content: `Anketa **${poll.title}** je uspjesno kreirana i traje 24 sata.`,
     ephemeral: true,
   });
 
@@ -306,7 +346,7 @@ async function handlePollVote(interaction, client) {
 }
 
 module.exports = {
-  createMapPoll,
+  handlePollButton,
+  handlePollModal,
   postPollPanel,
-  handlePollVote,
 };

@@ -30,7 +30,7 @@ const {
 } = require('discord.js');
 
 const commands = require('./commands');
-const { postPollPanel, handlePollVote } = require('./utils/pollSystem');
+const { postPollPanel, handlePollButton, handlePollModal } = require('./utils/pollSystem');
 
 // 🔹 ENV varijable
 const token = process.env.TOKEN;
@@ -3186,7 +3186,7 @@ if (interaction.commandName === 'update-field') {
 
   // ---------- BUTTONI (TICKETI + FARMING) ----------
   if (interaction.isButton()) {
-    if (await handlePollVote(interaction, client)) {
+    if (await handlePollButton(interaction, client)) {
       return;
     }
 
@@ -3865,6 +3865,10 @@ if (!task.cropName) {
 
   // ---------- MODALI (FIELD ADD + SIJANJE + KOMBAJNIRANJE) ----------
   if (interaction.isModalSubmit()) {
+    if (await handlePollModal(interaction, client)) {
+      return;
+    }
+
     if (interaction.customId.startsWith('ticket_answers:')) {
       await refreshSharedBotConfigFromMySql(true);
       const [, type] = interaction.customId.split(':');
