@@ -32,6 +32,10 @@ const {
 const commands = require('./commands');
 const { postPollPanel, handlePollButton, handlePollModal } = require('./utils/pollSystem');
 
+function isUnknownInteractionError(error) {
+  return error?.code === 10062;
+}
+
 // 🔹 ENV varijable
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
@@ -2671,11 +2675,35 @@ client.on('interactionCreate', async (interaction) => {
   // ---------- SLASH KOMANDE ----------
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'anketa') {
-      await interaction.deferReply({ ephemeral: true });
+      let repliedToCommand = false;
+
+      try {
+        await interaction.deferReply({ ephemeral: true });
+        repliedToCommand = true;
+      } catch (error) {
+        if (isUnknownInteractionError(error)) {
+          console.error('ANKETA COMMAND ERROR: interaction expired before deferReply.');
+        } else {
+          throw error;
+        }
+      }
+
       await postPollPanel(interaction, client);
-      await interaction.editReply({
-        content: 'Panel za ankete je postavljen u trazeni kanal.',
-      });
+
+      if (repliedToCommand) {
+        try {
+          await interaction.editReply({
+            content: 'Panel za ankete je postavljen u trazeni kanal.',
+          });
+        } catch (error) {
+          if (isUnknownInteractionError(error)) {
+            console.error('ANKETA COMMAND ERROR: interaction expired before editReply.');
+          } else {
+            throw error;
+          }
+        }
+      }
+
       return;
     }
 

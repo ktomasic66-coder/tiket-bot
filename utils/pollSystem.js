@@ -19,6 +19,10 @@ const POLL_BUTTON_PREFIX = 'anketa_vote:';
 const activePolls = new Map();
 const pendingPollDrafts = new Map();
 
+function isUnknownInteractionError(error) {
+  return error?.code === 10062;
+}
+
 function buildPollPanelEmbed() {
   return new EmbedBuilder()
     .setColor(0xfacc15)
@@ -452,7 +456,7 @@ async function safeShowPollModal(interaction, modalBuilder) {
     await interaction.showModal(modalBuilder);
     return true;
   } catch (error) {
-    if (error?.code === 10062) {
+    if (isUnknownInteractionError(error)) {
       console.error('ANKETA MODAL ERROR: interaction expired before modal could open.');
 
       const channel = interaction.channel;
@@ -469,6 +473,48 @@ async function safeShowPollModal(interaction, modalBuilder) {
   }
 }
 
+async function safeReply(interaction, payload, logLabel) {
+  try {
+    await interaction.reply(payload);
+    return true;
+  } catch (error) {
+    if (isUnknownInteractionError(error)) {
+      console.error(`${logLabel}: interaction expired before reply.`);
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+async function safeFollowUp(interaction, payload, logLabel) {
+  try {
+    await interaction.followUp(payload);
+    return true;
+  } catch (error) {
+    if (isUnknownInteractionError(error)) {
+      console.error(`${logLabel}: interaction expired before follow-up.`);
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+async function safeUpdate(interaction, payload, logLabel) {
+  try {
+    await interaction.update(payload);
+    return true;
+  } catch (error) {
+    if (isUnknownInteractionError(error)) {
+      console.error(`${logLabel}: interaction expired before update.`);
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 async function handlePollButton(interaction, client) {
   if (interaction.customId === POLL_PANEL_BUTTON_ID) {
     await safeShowPollModal(interaction, buildPollStepOneModal());
@@ -479,19 +525,19 @@ async function handlePollButton(interaction, client) {
     const ownerId = interaction.customId.slice(POLL_CONTINUE_BUTTON_PREFIX.length);
 
     if (interaction.user.id !== ownerId) {
-      await interaction.reply({
+      await safeReply(interaction, {
         content: 'Samo korisnik koji je zapoceo unos moze nastaviti ovu anketu.',
         flags: MessageFlags.Ephemeral,
-      });
+      }, 'ANKETA CONTINUE ERROR');
       return true;
     }
 
     const draft = pendingPollDrafts.get(interaction.user.id);
     if (!draft) {
-      await interaction.reply({
+      await safeReply(interaction, {
         content: 'Prvi korak je istekao. Klikni ponovo na **Kreiraj anketu**.',
         flags: MessageFlags.Ephemeral,
-      });
+      }, 'ANKETA DRAFT ERROR');
       return true;
     }
 
@@ -505,19 +551,19 @@ async function handlePollButton(interaction, client) {
 
   const poll = activePolls.get(interaction.message.id);
   if (!poll) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: 'Ova anketa vise nije aktivna ili je restart bota ocistio stanje iz memorije.',
       flags: MessageFlags.Ephemeral,
-    });
+    }, 'ANKETA STATE ERROR');
     return true;
   }
 
   if (poll.closed || Date.now() >= poll.endsAt) {
     await finalizePoll(client, poll.messageId);
-    await interaction.reply({
+    await safeReply(interaction, {
       content: 'Anketa je zavrsena. Dugmad su iskljucena, a finalni rezultati su ostali prikazani.',
       flags: MessageFlags.Ephemeral,
-    });
+    }, 'ANKETA CLOSED ERROR');
     return true;
   }
 
@@ -525,22 +571,26 @@ async function handlePollButton(interaction, client) {
   const selectedOption = poll.options.find((option) => option.id === selectedOptionId);
 
   if (!selectedOption) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: 'Odabrana opcija nije prepoznata.',
       flags: MessageFlags.Ephemeral,
-    });
+    }, 'ANKETA OPTION ERROR');
     return true;
   }
 
   const previousVote = poll.votes.get(interaction.user.id);
   poll.votes.set(interaction.user.id, selectedOption.id);
 
-  await interaction.update({
+  const updated = await safeUpdate(interaction, {
     embeds: [buildPollEmbed(poll)],
     components: [buildPollButtons(poll)],
-  });
+  }, 'ANKETA VOTE UPDATE ERROR');
 
-  await interaction.followUp({
+  if (!updated) {
+    return true;
+  }
+
+  await safeFollowUp(interaction, {
     content:
       previousVote && previousVote !== selectedOption.id
         ? `Tvoj glas je prebacen na **${selectedOption.label}**.`
@@ -548,7 +598,7 @@ async function handlePollButton(interaction, client) {
           ? `Tvoj glas za **${selectedOption.label}** je vec zabiljezen.`
           : `Tvoj glas za **${selectedOption.label}** je uspjesno zabiljezen.`,
     flags: MessageFlags.Ephemeral,
-  });
+  }, 'ANKETA VOTE FOLLOWUP ERROR');
 
   return true;
 }
@@ -562,10 +612,10 @@ async function handlePollModal(interaction, client) {
     const draft = buildStepOneDraft(interaction);
 
     if (draft.error) {
-      await interaction.reply({
+      await safeReply(interaction, {
         content: draft.error,
         flags: MessageFlags.Ephemeral,
-      });
+      }, 'ANKETA STEP1 ERROR');
       return true;
     }
 
@@ -575,12 +625,12 @@ async function handlePollModal(interaction, client) {
       createdAt: Date.now(),
     });
 
-    await interaction.reply({
+    await safeReply(interaction, {
       content:
         'Korak 1 je spremljen. Klikni ispod za otvaranje drugog modala i dovrsi unos ankete.',
       components: [buildContinueSetupRow(interaction.user.id)],
       flags: MessageFlags.Ephemeral,
-    });
+    }, 'ANKETA STEP1 REPLY ERROR');
     return true;
   }
 
@@ -590,19 +640,19 @@ async function handlePollModal(interaction, client) {
 
   const draft = pendingPollDrafts.get(interaction.user.id);
   if (!draft) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: 'Prvi korak nije pronaden ili je istekao. Pokreni kreiranje ankete ponovo.',
       flags: MessageFlags.Ephemeral,
-    });
+    }, 'ANKETA STEP2 DRAFT ERROR');
     return true;
   }
 
   const poll = buildPollFromDraft(draft, interaction);
   if (poll.error) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: poll.error,
       flags: MessageFlags.Ephemeral,
-    });
+    }, 'ANKETA STEP2 BUILD ERROR');
     return true;
   }
 
@@ -620,10 +670,10 @@ async function handlePollModal(interaction, client) {
   pendingPollDrafts.delete(interaction.user.id);
   schedulePollEnd(client, poll);
 
-  await interaction.reply({
+  await safeReply(interaction, {
     content: `Anketa **${poll.title}** je uspjesno kreirana i traje ${formatDurationLabel(poll.durationMs)}.`,
     flags: MessageFlags.Ephemeral,
-  });
+  }, 'ANKETA STEP2 REPLY ERROR');
 
   return true;
 }
