@@ -28,7 +28,14 @@ function buildPollPanelContent() {
   return [
     '**ANKETE**',
     '',
-    'Ovdje mozes kreirati anketu za modove, mape i slicne server odluke.',
+    'Ovdje mozes kreirati anketu za mape, modove i ostale vazne odluke na serveru.',
+    '',
+    '• Svaki clan moze glasati samo jednom',
+    '• Promjena glasa je moguca dok anketa traje',
+    '• Rezultati se azuriraju uzivo nakon svakog glasa',
+    '• Po isteku vremena glasanje se automatski zatvara',
+    '',
+    'Klikni na **Kreiraj anketu** za pocetak.',
   ].join('\n');
 }
 
@@ -102,18 +109,18 @@ function buildPollStepTwoModal() {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('poll_option_2_title')
-          .setLabel('Naslov opcije 2')
+          .setLabel('Naslov opcije 2 (opcionalno)')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(false)
           .setMaxLength(80)
           .setPlaceholder('npr. Midwest USA')
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('poll_option_2_description')
-          .setLabel('Opis opcije 2')
+          .setLabel('Opis opcije 2 (opcionalno)')
           .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true)
+          .setRequired(false)
           .setMaxLength(200)
           .setPlaceholder('npr. Velika ravna polja i velike masine.')
       ),
@@ -359,13 +366,20 @@ function buildPollFromDraft(draft, interaction) {
     .getTextInputValue('poll_option_3_description')
     .trim();
 
-  const options = [
-    ...draft.options,
-    {
+  const options = [...draft.options];
+
+  if (optionTwoTitle || optionTwoDescription) {
+    if (!optionTwoTitle || !optionTwoDescription) {
+      return {
+        error: 'Ako koristis opciju 2, moras upisati i naslov i opis.',
+      };
+    }
+
+    options.push({
       label: optionTwoTitle,
       description: optionTwoDescription,
-    },
-  ];
+    });
+  }
 
   if (optionThreeTitle || optionThreeDescription) {
     if (!optionThreeTitle || !optionThreeDescription) {
