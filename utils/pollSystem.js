@@ -1,5 +1,4 @@
 const {
-  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -23,13 +22,12 @@ function isUnknownInteractionError(error) {
   return error?.code === 10062;
 }
 
-function buildPollPanelEmbed() {
-  return new EmbedBuilder()
-    .setColor(0xfacc15)
-    .setTitle('📊 Ankete')
-    .setDescription(
-      'Ovdje mozes kreirati anketu za modove, mape i slicne server odluke.'
-    );
+function buildPollPanelContent() {
+  return [
+    '**ANKETE**',
+    '',
+    'Ovdje mozes kreirati anketu za modove, mape i slicne server odluke.',
+  ].join('\n');
 }
 
 function buildPollPanelRow() {
@@ -273,60 +271,41 @@ function buildPollButtons(poll, { disabled = false } = {}) {
   return row;
 }
 
-function buildPollEmbed(poll) {
+function buildPollMessageContent(poll) {
   const totals = getVoteTotals(poll);
   const totalVotes = poll.votes.size;
   const isClosed = poll.closed || Date.now() >= poll.endsAt;
   const leader = getLeadingOption(poll, totals);
 
-  return new EmbedBuilder()
-    .setColor(isClosed ? 0x64748b : 0xf59e0b)
-    .setTitle('GLASANJE')
-    .setDescription(
-      [
-        `**${poll.title}**`,
-        '',
-        poll.description,
-        '',
-        isClosed
-          ? 'Glasanje je zavrseno. Finalni rezultati su zakljucani ispod.'
-          : `Glasanje je otvoreno do ${formatDiscordRelativeTime(poll.endsAt)}.`,
-      ].join('\n\n')
-    )
-    .addFields(
-      ...poll.options.map((option) => ({
-        name: `📌 ${option.label}`,
-        value: [
-          `> ${option.description}`,
-          '',
-          `**Glasova:** ${totals[option.id]} (${getVotePercent(totalVotes, totals[option.id])}%)`,
-          `**Napredak:** \`${buildVoteBar(getVotePercent(totalVotes, totals[option.id]))}\``,
-          '',
-        ].join('\n'),
-        inline: false,
-      })),
-      {
-        name: '📊 Pregled',
-        value: [
-          `Ukupno glasova: **${totalVotes}**`,
-          `Trajanje: **${formatDurationLabel(poll.durationMs)}**`,
-          leader ? `Vodi: **${leader.label}** (${leader.votes} glasova)` : 'Vodi: jos nema glasova',
-          '',
-        ].join('\n'),
-        inline: false,
-      },
-      {
-        name: '🧾 Rezultati',
-        value: poll.options
-          .map((option) => `• **${option.label}**: ${totals[option.id]} glasova`)
-          .join('\n\n'),
-        inline: false,
-      }
-    )
-    .setFooter({
-      text: 'Jedan korisnik moze imati samo jedan aktivan glas',
-    })
-    .setTimestamp();
+  return [
+    '**GLASANJE**',
+    '',
+    `**${poll.title}**`,
+    '',
+    poll.description,
+    '',
+    isClosed
+      ? 'Glasanje je zavrseno. Finalni rezultati su zakljucani ispod.'
+      : `Glasanje je otvoreno do ${formatDiscordRelativeTime(poll.endsAt)}.`,
+    '',
+    ...poll.options.flatMap((option) => [
+      `📌 **${option.label}**`,
+      option.description,
+      '',
+      `**Glasova:** ${totals[option.id]} (${getVotePercent(totalVotes, totals[option.id])}%)`,
+      `**Napredak:** \`${buildVoteBar(getVotePercent(totalVotes, totals[option.id]))}\``,
+      '',
+    ]),
+    '**Pregled**',
+    `Ukupno glasova: **${totalVotes}**`,
+    `Trajanje: **${formatDurationLabel(poll.durationMs)}**`,
+    leader ? `Vodi: **${leader.label}** (${leader.votes} glasova)` : 'Vodi: jos nema glasova',
+    '',
+    '**Rezultati**',
+    ...poll.options.map((option) => `• **${option.label}**: ${totals[option.id]} glasova`),
+    '',
+    '_Jedan korisnik moze imati samo jedan aktivan glas_',
+  ].join('\n');
 }
 
 function buildStepOneDraft(interaction) {
@@ -425,7 +404,7 @@ async function finalizePoll(client, messageId) {
 
     const message = await channel.messages.fetch(messageId);
     await message.edit({
-      embeds: [buildPollEmbed(poll)],
+      content: buildPollMessageContent(poll),
       components: [buildPollButtons(poll, { disabled: true })],
     });
   } catch (error) {
@@ -450,7 +429,7 @@ async function postPollPanel(interaction, client) {
   }
 
   await channel.send({
-    embeds: [buildPollPanelEmbed()],
+    content: buildPollPanelContent(),
     components: [buildPollPanelRow()],
   });
 }
@@ -529,19 +508,27 @@ async function handlePollButton(interaction, client) {
     const ownerId = interaction.customId.slice(POLL_CONTINUE_BUTTON_PREFIX.length);
 
     if (interaction.user.id !== ownerId) {
-      await safeReply(interaction, {
-        content: 'Samo korisnik koji je zapoceo unos moze nastaviti ovu anketu.',
-        flags: MessageFlags.Ephemeral,
-      }, 'ANKETA CONTINUE ERROR');
+      await safeReply(
+        interaction,
+        {
+          content: 'Samo korisnik koji je zapoceo unos moze nastaviti ovu anketu.',
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA CONTINUE ERROR'
+      );
       return true;
     }
 
     const draft = pendingPollDrafts.get(interaction.user.id);
     if (!draft) {
-      await safeReply(interaction, {
-        content: 'Prvi korak je istekao. Klikni ponovo na **Kreiraj anketu**.',
-        flags: MessageFlags.Ephemeral,
-      }, 'ANKETA DRAFT ERROR');
+      await safeReply(
+        interaction,
+        {
+          content: 'Prvi korak je istekao. Klikni ponovo na **Kreiraj anketu**.',
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA DRAFT ERROR'
+      );
       return true;
     }
 
@@ -555,19 +542,27 @@ async function handlePollButton(interaction, client) {
 
   const poll = activePolls.get(interaction.message.id);
   if (!poll) {
-    await safeReply(interaction, {
-      content: 'Ova anketa vise nije aktivna ili je restart bota ocistio stanje iz memorije.',
-      flags: MessageFlags.Ephemeral,
-    }, 'ANKETA STATE ERROR');
+    await safeReply(
+      interaction,
+      {
+        content: 'Ova anketa vise nije aktivna ili je restart bota ocistio stanje iz memorije.',
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA STATE ERROR'
+    );
     return true;
   }
 
   if (poll.closed || Date.now() >= poll.endsAt) {
     await finalizePoll(client, poll.messageId);
-    await safeReply(interaction, {
-      content: 'Anketa je zavrsena. Dugmad su iskljucena, a finalni rezultati su ostali prikazani.',
-      flags: MessageFlags.Ephemeral,
-    }, 'ANKETA CLOSED ERROR');
+    await safeReply(
+      interaction,
+      {
+        content: 'Anketa je zavrsena. Dugmad su iskljucena, a finalni rezultati su ostali prikazani.',
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA CLOSED ERROR'
+    );
     return true;
   }
 
@@ -575,34 +570,46 @@ async function handlePollButton(interaction, client) {
   const selectedOption = poll.options.find((option) => option.id === selectedOptionId);
 
   if (!selectedOption) {
-    await safeReply(interaction, {
-      content: 'Odabrana opcija nije prepoznata.',
-      flags: MessageFlags.Ephemeral,
-    }, 'ANKETA OPTION ERROR');
+    await safeReply(
+      interaction,
+      {
+        content: 'Odabrana opcija nije prepoznata.',
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA OPTION ERROR'
+    );
     return true;
   }
 
   const previousVote = poll.votes.get(interaction.user.id);
   poll.votes.set(interaction.user.id, selectedOption.id);
 
-  const updated = await safeUpdate(interaction, {
-    embeds: [buildPollEmbed(poll)],
-    components: [buildPollButtons(poll)],
-  }, 'ANKETA VOTE UPDATE ERROR');
+  const updated = await safeUpdate(
+    interaction,
+    {
+      content: buildPollMessageContent(poll),
+      components: [buildPollButtons(poll)],
+    },
+    'ANKETA VOTE UPDATE ERROR'
+  );
 
   if (!updated) {
     return true;
   }
 
-  await safeFollowUp(interaction, {
-    content:
-      previousVote && previousVote !== selectedOption.id
-        ? `Tvoj glas je prebacen na **${selectedOption.label}**.`
-        : previousVote === selectedOption.id
-          ? `Tvoj glas za **${selectedOption.label}** je vec zabiljezen.`
-          : `Tvoj glas za **${selectedOption.label}** je uspjesno zabiljezen.`,
-    flags: MessageFlags.Ephemeral,
-  }, 'ANKETA VOTE FOLLOWUP ERROR');
+  await safeFollowUp(
+    interaction,
+    {
+      content:
+        previousVote && previousVote !== selectedOption.id
+          ? `Tvoj glas je prebacen na **${selectedOption.label}**.`
+          : previousVote === selectedOption.id
+            ? `Tvoj glas za **${selectedOption.label}** je vec zabiljezen.`
+            : `Tvoj glas za **${selectedOption.label}** je uspjesno zabiljezen.`,
+      flags: MessageFlags.Ephemeral,
+    },
+    'ANKETA VOTE FOLLOWUP ERROR'
+  );
 
   return true;
 }
@@ -616,10 +623,14 @@ async function handlePollModal(interaction, client) {
     const draft = buildStepOneDraft(interaction);
 
     if (draft.error) {
-      await safeReply(interaction, {
-        content: draft.error,
-        flags: MessageFlags.Ephemeral,
-      }, 'ANKETA STEP1 ERROR');
+      await safeReply(
+        interaction,
+        {
+          content: draft.error,
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA STEP1 ERROR'
+      );
       return true;
     }
 
@@ -629,12 +640,16 @@ async function handlePollModal(interaction, client) {
       createdAt: Date.now(),
     });
 
-    await safeReply(interaction, {
-      content:
-        'Korak 1 je spremljen. Klikni ispod za otvaranje drugog modala i dovrsi unos ankete.',
-      components: [buildContinueSetupRow(interaction.user.id)],
-      flags: MessageFlags.Ephemeral,
-    }, 'ANKETA STEP1 REPLY ERROR');
+    await safeReply(
+      interaction,
+      {
+        content:
+          'Korak 1 je spremljen. Klikni ispod za otvaranje drugog modala i dovrsi unos ankete.',
+        components: [buildContinueSetupRow(interaction.user.id)],
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA STEP1 REPLY ERROR'
+    );
     return true;
   }
 
@@ -644,24 +659,32 @@ async function handlePollModal(interaction, client) {
 
   const draft = pendingPollDrafts.get(interaction.user.id);
   if (!draft) {
-    await safeReply(interaction, {
-      content: 'Prvi korak nije pronaden ili je istekao. Pokreni kreiranje ankete ponovo.',
-      flags: MessageFlags.Ephemeral,
-    }, 'ANKETA STEP2 DRAFT ERROR');
+    await safeReply(
+      interaction,
+      {
+        content: 'Prvi korak nije pronaden ili je istekao. Pokreni kreiranje ankete ponovo.',
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA STEP2 DRAFT ERROR'
+    );
     return true;
   }
 
   const poll = buildPollFromDraft(draft, interaction);
   if (poll.error) {
-    await safeReply(interaction, {
-      content: poll.error,
-      flags: MessageFlags.Ephemeral,
-    }, 'ANKETA STEP2 BUILD ERROR');
+    await safeReply(
+      interaction,
+      {
+        content: poll.error,
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA STEP2 BUILD ERROR'
+    );
     return true;
   }
 
   const pollMessage = await interaction.channel.send({
-    embeds: [buildPollEmbed(poll)],
+    content: buildPollMessageContent(poll),
     components: [buildPollButtons(poll)],
   });
 
@@ -674,10 +697,14 @@ async function handlePollModal(interaction, client) {
   pendingPollDrafts.delete(interaction.user.id);
   schedulePollEnd(client, poll);
 
-  await safeReply(interaction, {
-    content: `Anketa **${poll.title}** je uspjesno kreirana i traje ${formatDurationLabel(poll.durationMs)}.`,
-    flags: MessageFlags.Ephemeral,
-  }, 'ANKETA STEP2 REPLY ERROR');
+  await safeReply(
+    interaction,
+    {
+      content: `Anketa **${poll.title}** je uspjesno kreirana i traje ${formatDurationLabel(poll.durationMs)}.`,
+      flags: MessageFlags.Ephemeral,
+    },
+    'ANKETA STEP2 REPLY ERROR'
+  );
 
   return true;
 }
