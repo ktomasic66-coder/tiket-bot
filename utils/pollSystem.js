@@ -280,7 +280,7 @@ function hasDuplicateOptionTitles(options) {
 }
 
 function getVoteTotals(poll) {
-  const totals = Object.fromEntries(poll.options.map((option) => [option.id, 0]));
+  const totals = Object.fromEntries(getVotingOptions(poll).map((option) => [option.id, 0]));
 
   for (const selectedOptionId of poll.votes.values()) {
     if (typeof totals[selectedOptionId] === 'number') {
@@ -289,6 +289,17 @@ function getVoteTotals(poll) {
   }
 
   return totals;
+}
+
+function getVotingOptions(poll) {
+  if (poll.options.length === 1) {
+    return [
+      { id: 'yes', label: 'DA', style: ButtonStyle.Success },
+      { id: 'no', label: 'NE', style: ButtonStyle.Danger },
+    ];
+  }
+
+  return poll.options;
 }
 
 function getVotePercent(totalVotes, votesForOption) {
@@ -320,7 +331,7 @@ function buildVoteEmojiLine(votes) {
 }
 
 function getLeadingOption(poll, totals) {
-  return poll.options.reduce((best, option) => {
+  return getVotingOptions(poll).reduce((best, option) => {
     const votes = totals[option.id];
 
     if (!best || votes > best.votes) {
@@ -334,7 +345,7 @@ function getLeadingOption(poll, totals) {
 function buildPollButtons(poll, { disabled = false } = {}) {
   const row = new ActionRowBuilder();
 
-  for (const option of poll.options) {
+  for (const option of getVotingOptions(poll)) {
     row.addComponents(
       new ButtonBuilder()
         .setCustomId(`${POLL_BUTTON_PREFIX}${option.id}`)
@@ -352,6 +363,13 @@ function buildPollMessageContent(poll) {
   const totalVotes = poll.votes.size;
   const isClosed = poll.closed || Date.now() >= poll.endsAt;
   const leader = getLeadingOption(poll, totals);
+  const isSingleOptionPoll = poll.options.length === 1;
+  const resultLines = isSingleOptionPoll
+    ? [
+        `• **DA**: ${totals.yes || 0} glasova`,
+        `• **NE**: ${totals.no || 0} glasova`,
+      ]
+    : poll.options.map((option) => `• **${option.label}**: ${totals[option.id]} glasova`);
 
   return [
     '**GLASANJE**',
@@ -368,8 +386,12 @@ function buildPollMessageContent(poll) {
       `📌 **${option.label}**`,
       option.description,
       '',
-      `**Glasova:** ${totals[option.id]}`,
-      `**Prikaz glasova:** ${buildVoteEmojiLine(totals[option.id])}`,
+      ...(isSingleOptionPoll
+        ? []
+        : [
+            `**Glasova:** ${totals[option.id]}`,
+            `**Prikaz glasova:** ${buildVoteEmojiLine(totals[option.id])}`,
+          ]),
       '',
     ]),
     '**Pregled**',
@@ -378,7 +400,7 @@ function buildPollMessageContent(poll) {
     leader ? `Vodi: **${leader.label}** (${leader.votes} glasova)` : 'Vodi: jos nema glasova',
     '',
     '**Rezultati**',
-    ...poll.options.map((option) => `• **${option.label}**: ${totals[option.id]} glasova`),
+    ...resultLines,
     '',
     '_Jedan korisnik moze imati samo jedan aktivan glas_',
   ].join('\n');
@@ -737,7 +759,9 @@ async function handlePollButton(interaction, client) {
   }
 
   const selectedOptionId = interaction.customId.slice(POLL_BUTTON_PREFIX.length);
-  const selectedOption = poll.options.find((option) => option.id === selectedOptionId);
+  const selectedOption = getVotingOptions(poll).find(
+    (option) => option.id === selectedOptionId
+  );
 
   if (!selectedOption) {
     await safeReply(
