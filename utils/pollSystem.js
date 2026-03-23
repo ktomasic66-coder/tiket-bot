@@ -12,6 +12,7 @@ const POLL_PANEL_CHANNEL_ID = '1485686826558816296';
 const POLL_PANEL_BUTTON_ID = 'poll_panel_create';
 const POLL_CREATE_STEP_ONE_MODAL_ID = 'poll_create_step_one';
 const POLL_CONTINUE_BUTTON_PREFIX = 'poll_continue_setup:';
+const POLL_FINISH_BUTTON_PREFIX = 'poll_finish_setup:';
 const POLL_BUTTON_PREFIX = 'anketa_vote:';
 const POLL_LOGO_EMOJI = '<:srlogo:1439652081693888544>';
 const POLL_LOGO_EMOJI_MAX = 10;
@@ -188,12 +189,21 @@ function buildPollOptionStepModal(stepNumber) {
 }
 
 function buildContinueSetupRow(userId, nextStep) {
-  return new ActionRowBuilder().addComponents(
+  const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`${POLL_CONTINUE_BUTTON_PREFIX}${userId}:${nextStep}`)
       .setLabel(`Otvori korak ${nextStep}`)
       .setStyle(ButtonStyle.Primary)
   );
+
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`${POLL_FINISH_BUTTON_PREFIX}${userId}`)
+      .setLabel('Zavrsi anketu')
+      .setStyle(ButtonStyle.Success)
+  );
+
+  return row;
 }
 
 function formatDiscordRelativeTime(timestampMs) {
@@ -580,6 +590,72 @@ async function handlePollButton(interaction, client) {
     }
 
     await safeShowPollModal(interaction, buildPollStepOneModal());
+    return true;
+  }
+
+  if (interaction.customId.startsWith(POLL_FINISH_BUTTON_PREFIX)) {
+    const ownerId = interaction.customId.slice(POLL_FINISH_BUTTON_PREFIX.length);
+
+    if (interaction.user.id !== ownerId) {
+      await safeReply(
+        interaction,
+        {
+          content: 'Samo korisnik koji je zapoceo unos moze zavrsiti ovu anketu.',
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA FINISH OWNER ERROR'
+      );
+      return true;
+    }
+
+    const draft = pendingPollDrafts.get(interaction.user.id);
+    if (!draft) {
+      await safeReply(
+        interaction,
+        {
+          content: 'Nema spremljenog unosa za zavrsetak ankete. Pokreni kreiranje ponovo.',
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA FINISH DRAFT ERROR'
+      );
+      return true;
+    }
+
+    const poll = buildPollFromDraft(draft);
+    if (poll.error) {
+      await safeReply(
+        interaction,
+        {
+          content: poll.error,
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA FINISH BUILD ERROR'
+      );
+      return true;
+    }
+
+    const pollMessage = await interaction.channel.send({
+      content: buildPollAnnouncementContent(poll),
+      components: [buildPollButtons(poll)],
+    });
+
+    poll.messageId = pollMessage.id;
+    poll.channelId = interaction.channelId;
+    poll.guildId = interaction.guildId;
+    poll.createdBy = interaction.user.id;
+
+    activePolls.set(pollMessage.id, poll);
+    pendingPollDrafts.delete(interaction.user.id);
+    schedulePollEnd(client, poll);
+
+    await safeReply(
+      interaction,
+      {
+        content: `Anketa **${poll.title}** je uspjesno kreirana i traje ${formatDurationLabel(poll.durationMs)}.`,
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA FINISH REPLY ERROR'
+    );
     return true;
   }
 
