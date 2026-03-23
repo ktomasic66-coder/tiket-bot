@@ -14,6 +14,8 @@ const POLL_CREATE_STEP_ONE_MODAL_ID = 'poll_create_step_one';
 const POLL_CREATE_STEP_TWO_MODAL_ID = 'poll_create_step_two';
 const POLL_CONTINUE_BUTTON_PREFIX = 'poll_continue_setup:';
 const POLL_BUTTON_PREFIX = 'anketa_vote:';
+const POLL_LOGO_EMOJI = '<:srlogo:1439652081693888544>';
+const POLL_LOGO_EMOJI_MAX = 10;
 
 const activePolls = new Map();
 const pendingPollDrafts = new Map();
@@ -243,6 +245,21 @@ function buildVoteBar(percent) {
   return `${'█'.repeat(filled)}${'░'.repeat(10 - filled)}`;
 }
 
+function buildVoteEmojiLine(votes) {
+  if (!votes) {
+    return 'Nema glasova jos.';
+  }
+
+  const emojiCount = Math.min(votes, POLL_LOGO_EMOJI_MAX);
+  const emojiLine = Array.from({ length: emojiCount }, () => POLL_LOGO_EMOJI).join(' ');
+
+  if (votes > POLL_LOGO_EMOJI_MAX) {
+    return `${emojiLine} x${votes}`;
+  }
+
+  return emojiLine;
+}
+
 function getLeadingOption(poll, totals) {
   return poll.options.reduce((best, option) => {
     const votes = totals[option.id];
@@ -293,7 +310,7 @@ function buildPollMessageContent(poll) {
       option.description,
       '',
       `**Glasova:** ${totals[option.id]} (${getVotePercent(totalVotes, totals[option.id])}%)`,
-      `**Napredak:** \`${buildVoteBar(getVotePercent(totalVotes, totals[option.id]))}\``,
+      `**Prikaz glasova:** ${buildVoteEmojiLine(totals[option.id])}`,
       '',
     ]),
     '**Pregled**',
