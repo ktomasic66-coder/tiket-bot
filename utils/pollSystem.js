@@ -28,14 +28,14 @@ function buildPollPanelContent() {
   return [
     '**ANKETE**',
     '',
-    'Ovdje mozes kreirati anketu za mape, modove i ostale vazne odluke na serveru.',
+    'Ovdje možeš kreirati ankete za mape, modove i ostale važne odluke na serveru.',
     '',
-    '• Svaki clan moze glasati samo jednom',
-    '• Promjena glasa je moguca dok anketa traje',
-    '• Rezultati se azuriraju uzivo nakon svakog glasa',
+    '• Svaki član može glasati samo jednom',
+    '• Promjena glasa je moguća dok anketa traje',
+    '• Rezultati se ažuriraju uživo nakon svakog glasa',
     '• Po isteku vremena glasanje se automatski zatvara',
     '',
-    'Klikni na **Kreiraj anketu** za pocetak.',
+    'Klikni na **Kreiraj anketu** za početak.',
   ].join('\n');
 }
 
