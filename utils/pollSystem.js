@@ -3,6 +3,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -249,9 +250,31 @@ async function postPollPanel(interaction, client) {
   });
 }
 
+async function safeShowPollModal(interaction) {
+  try {
+    await interaction.showModal(buildPollCreateModal());
+    return true;
+  } catch (error) {
+    if (error?.code === 10062) {
+      console.error('ANKETA MODAL ERROR: interaction expired before modal could open.');
+
+      const channel = interaction.channel;
+      if (channel?.isTextBased()) {
+        await channel.send({
+          content: `<@${interaction.user.id}> klik je istekao prije otvaranja forme. Klikni ponovo na **Kreiraj anketu**.`,
+        }).catch(() => {});
+      }
+
+      return true;
+    }
+
+    throw error;
+  }
+}
+
 async function handlePollButton(interaction, client) {
   if (interaction.customId === POLL_PANEL_BUTTON_ID) {
-    await interaction.showModal(buildPollCreateModal());
+    await safeShowPollModal(interaction);
     return true;
   }
 
@@ -263,7 +286,7 @@ async function handlePollButton(interaction, client) {
   if (!poll) {
     await interaction.reply({
       content: 'Ova anketa vise nije aktivna ili je restart bota ocistio stanje iz memorije.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return true;
   }
@@ -272,7 +295,7 @@ async function handlePollButton(interaction, client) {
     await finalizePoll(client, poll.messageId);
     await interaction.reply({
       content: 'Anketa je zavrsena. Dugmad su iskljucena, a finalni rezultati su ostali prikazani.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return true;
   }
@@ -283,7 +306,7 @@ async function handlePollButton(interaction, client) {
   if (!selectedOption) {
     await interaction.reply({
       content: 'Odabrana opcija nije prepoznata.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return true;
   }
@@ -303,7 +326,7 @@ async function handlePollButton(interaction, client) {
         : previousVote === selectedOption.id
           ? `Tvoj glas za **${selectedOption.label}** je vec zabiljezen.`
           : `Tvoj glas za **${selectedOption.label}** je uspjesno zabiljezen.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   return true;
@@ -319,7 +342,7 @@ async function handlePollModal(interaction, client) {
   if (!poll) {
     await interaction.reply({
       content: 'Opcije ankete moraju biti razlicite. Promijeni nazive i pokusaj ponovno.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return true;
   }
@@ -339,7 +362,7 @@ async function handlePollModal(interaction, client) {
 
   await interaction.reply({
     content: `Anketa **${poll.title}** je uspjesno kreirana i traje 24 sata.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   return true;
