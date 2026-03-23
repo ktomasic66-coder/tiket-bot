@@ -11,7 +11,6 @@ const {
 const POLL_PANEL_CHANNEL_ID = '1485686826558816296';
 const POLL_PANEL_BUTTON_ID = 'poll_panel_create';
 const POLL_CREATE_STEP_ONE_MODAL_ID = 'poll_create_step_one';
-const POLL_CREATE_STEP_TWO_MODAL_ID = 'poll_create_step_two';
 const POLL_CONTINUE_BUTTON_PREFIX = 'poll_continue_setup:';
 const POLL_BUTTON_PREFIX = 'anketa_vote:';
 const POLL_LOGO_EMOJI = '<:srlogo:1439652081693888544>';
@@ -25,6 +24,13 @@ const ADMIN_ROLE_IDS = new Set([
 
 const activePolls = new Map();
 const pendingPollDrafts = new Map();
+const POLL_OPTION_STEP_CONFIGS = [
+  { step: 2, modalId: 'poll_create_step_two', optionNumbers: [2, 3] },
+  { step: 3, modalId: 'poll_create_step_three', optionNumbers: [4, 5] },
+  { step: 4, modalId: 'poll_create_step_four', optionNumbers: [6, 7] },
+  { step: 5, modalId: 'poll_create_step_five', optionNumbers: [8, 9] },
+  { step: 6, modalId: 'poll_create_step_six', optionNumbers: [10] },
+];
 
 function isUnknownInteractionError(error) {
   return error?.code === 10062;
@@ -133,55 +139,59 @@ function buildPollStepOneModal() {
     );
 }
 
-function buildPollStepTwoModal() {
-  return new ModalBuilder()
-    .setCustomId(POLL_CREATE_STEP_TWO_MODAL_ID)
-    .setTitle('Kreiranje ankete - 2/2')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('poll_option_2_title')
-          .setLabel('Naslov opcije 2 (opcionalno)')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false)
-          .setMaxLength(80)
-          .setPlaceholder('npr. Midwest USA')
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('poll_option_2_description')
-          .setLabel('Opis opcije 2 (opcionalno)')
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(false)
-          .setMaxLength(200)
-          .setPlaceholder('npr. Velika ravna polja i velike masine.')
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('poll_option_3_title')
-          .setLabel('Naslov opcije 3 (opcionalno)')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false)
-          .setMaxLength(80)
-          .setPlaceholder('npr. Elmcreek')
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('poll_option_3_description')
-          .setLabel('Opis opcije 3 (opcionalno)')
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(false)
-          .setMaxLength(200)
-          .setPlaceholder('npr. Balansirana mapa za manju ekipu.')
-      )
-    );
+function getPollOptionStepConfig(stepNumber) {
+  return POLL_OPTION_STEP_CONFIGS.find((config) => config.step === stepNumber) || null;
 }
 
-function buildContinueSetupRow(userId) {
+function getPollOptionStepConfigByModalId(modalId) {
+  return POLL_OPTION_STEP_CONFIGS.find((config) => config.modalId === modalId) || null;
+}
+
+function buildPollOptionStepModal(stepNumber) {
+  const config = getPollOptionStepConfig(stepNumber);
+  if (!config) {
+    return null;
+  }
+
+  const components = [];
+
+  for (const optionNumber of config.optionNumbers) {
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId(`poll_option_${optionNumber}_title`)
+          .setLabel(`Naslov opcije ${optionNumber} (opcionalno)`)
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(80)
+          .setPlaceholder(`npr. Opcija ${optionNumber}`)
+      )
+    );
+
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId(`poll_option_${optionNumber}_description`)
+          .setLabel(`Opis opcije ${optionNumber} (opcionalno)`)
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(false)
+          .setMaxLength(200)
+          .setPlaceholder(`Upisi opis za opciju ${optionNumber}.`)
+      )
+    );
+  }
+
+  return new ModalBuilder()
+    .setCustomId(config.modalId)
+    .setTitle(`Kreiranje ankete - ${stepNumber}/6`)
+    .addComponents(...components);
+}
+
+function buildContinueSetupRow(userId, nextStep) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`${POLL_CONTINUE_BUTTON_PREFIX}${userId}`)
-      .setLabel('Otvori korak 2')
+      .setCustomId(`${POLL_CONTINUE_BUTTON_PREFIX}${userId}:${nextStep}`)
+      .setLabel(`Otvori korak ${nextStep}`)
       .setStyle(ButtonStyle.Primary)
   );
 }
@@ -388,45 +398,39 @@ function buildStepOneDraft(interaction) {
   };
 }
 
-function buildPollFromDraft(draft, interaction) {
-  const optionTwoTitle = interaction.fields.getTextInputValue('poll_option_2_title').trim();
-  const optionTwoDescription = interaction.fields
-    .getTextInputValue('poll_option_2_description')
-    .trim();
-  const optionThreeTitle = interaction.fields.getTextInputValue('poll_option_3_title').trim();
-  const optionThreeDescription = interaction.fields
-    .getTextInputValue('poll_option_3_description')
-    .trim();
+function appendOptionsFromModalStep(draft, interaction, optionNumbers) {
+  const nextOptions = [...draft.options];
 
-  const options = [...draft.options];
+  for (const optionNumber of optionNumbers) {
+    const title = interaction.fields
+      .getTextInputValue(`poll_option_${optionNumber}_title`)
+      .trim();
+    const description = interaction.fields
+      .getTextInputValue(`poll_option_${optionNumber}_description`)
+      .trim();
 
-  if (optionTwoTitle || optionTwoDescription) {
-    if (!optionTwoTitle || !optionTwoDescription) {
-      return {
-        error: 'Ako koristis opciju 2, moras upisati i naslov i opis.',
-      };
+    if (title || description) {
+      if (!title || !description) {
+        return {
+          error: `Ako koristis opciju ${optionNumber}, moras upisati i naslov i opis.`,
+        };
+      }
+
+      nextOptions.push({
+        label: title,
+        description,
+      });
     }
-
-    options.push({
-      label: optionTwoTitle,
-      description: optionTwoDescription,
-    });
   }
 
-  if (optionThreeTitle || optionThreeDescription) {
-    if (!optionThreeTitle || !optionThreeDescription) {
-      return {
-        error: 'Ako koristis opciju 3, moras upisati i naslov i opis.',
-      };
-    }
+  return {
+    ...draft,
+    options: nextOptions,
+  };
+}
 
-    options.push({
-      label: optionThreeTitle,
-      description: optionThreeDescription,
-    });
-  }
-
-  if (hasDuplicateOptionTitles(options)) {
+function buildPollFromDraft(draft) {
+  if (hasDuplicateOptionTitles(draft.options)) {
     return {
       error: 'Nazivi opcija moraju biti razliciti. Promijeni duplikate i pokusaj ponovno.',
     };
@@ -438,7 +442,7 @@ function buildPollFromDraft(draft, interaction) {
     title: draft.title,
     description: draft.description,
     durationMs: draft.durationMs,
-    options: options.map(normalizeOption),
+    options: draft.options.map(normalizeOption),
     votes: new Map(),
     endsAt,
     closed: false,
@@ -580,7 +584,9 @@ async function handlePollButton(interaction, client) {
   }
 
   if (interaction.customId.startsWith(POLL_CONTINUE_BUTTON_PREFIX)) {
-    const ownerId = interaction.customId.slice(POLL_CONTINUE_BUTTON_PREFIX.length);
+    const rawPayload = interaction.customId.slice(POLL_CONTINUE_BUTTON_PREFIX.length);
+    const [ownerId, nextStepRaw] = rawPayload.split(':');
+    const nextStep = Number.parseInt(nextStepRaw || '0', 10);
 
     if (interaction.user.id !== ownerId) {
       await safeReply(
@@ -607,7 +613,20 @@ async function handlePollButton(interaction, client) {
       return true;
     }
 
-    await safeShowPollModal(interaction, buildPollStepTwoModal());
+    const modal = buildPollOptionStepModal(nextStep);
+    if (!modal) {
+      await safeReply(
+        interaction,
+        {
+          content: 'Sljedeci korak za ovu anketu nije pronaden.',
+          flags: MessageFlags.Ephemeral,
+        },
+        'ANKETA NEXT STEP ERROR'
+      );
+      return true;
+    }
+
+    await safeShowPollModal(interaction, modal);
     return true;
   }
 
@@ -713,6 +732,7 @@ async function handlePollModal(interaction, client) {
       ...draft,
       channelId: interaction.channelId,
       createdAt: Date.now(),
+      nextStep: 2,
     });
 
     if (!canUseAdvancedPollSetup(interaction.member)) {
@@ -756,8 +776,8 @@ async function handlePollModal(interaction, client) {
       interaction,
       {
         content:
-          'Korak 1 je spremljen. Klikni ispod za otvaranje drugog modala i dovrsi unos ankete.',
-        components: [buildContinueSetupRow(interaction.user.id)],
+          'Korak 1 je spremljen. Klikni ispod za nastavak unosa ostalih opcija.',
+        components: [buildContinueSetupRow(interaction.user.id, 2)],
         flags: MessageFlags.Ephemeral,
       },
       'ANKETA STEP1 REPLY ERROR'
@@ -765,7 +785,8 @@ async function handlePollModal(interaction, client) {
     return true;
   }
 
-  if (interaction.customId !== POLL_CREATE_STEP_TWO_MODAL_ID) {
+  const optionStepConfig = getPollOptionStepConfigByModalId(interaction.customId);
+  if (!optionStepConfig) {
     return false;
   }
 
@@ -782,7 +803,43 @@ async function handlePollModal(interaction, client) {
     return true;
   }
 
-  const poll = buildPollFromDraft(draft, interaction);
+  const updatedDraft = appendOptionsFromModalStep(
+    draft,
+    interaction,
+    optionStepConfig.optionNumbers
+  );
+  if (updatedDraft.error) {
+    await safeReply(
+      interaction,
+      {
+        content: updatedDraft.error,
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA STEP2 BUILD ERROR'
+    );
+    return true;
+  }
+
+  if (optionStepConfig.step < 6) {
+    const nextStep = optionStepConfig.step + 1;
+    pendingPollDrafts.set(interaction.user.id, {
+      ...updatedDraft,
+      nextStep,
+    });
+
+    await safeReply(
+      interaction,
+      {
+        content: `Korak ${optionStepConfig.step} je spremljen. Klikni ispod za nastavak unosa.`,
+        components: [buildContinueSetupRow(interaction.user.id, nextStep)],
+        flags: MessageFlags.Ephemeral,
+      },
+      'ANKETA NEXT STEP REPLY ERROR'
+    );
+    return true;
+  }
+
+  const poll = buildPollFromDraft(updatedDraft);
   if (poll.error) {
     await safeReply(
       interaction,
@@ -790,7 +847,7 @@ async function handlePollModal(interaction, client) {
         content: poll.error,
         flags: MessageFlags.Ephemeral,
       },
-      'ANKETA STEP2 BUILD ERROR'
+      'ANKETA FINAL BUILD ERROR'
     );
     return true;
   }
