@@ -45,8 +45,8 @@ function isUnknownInteractionError(error) {
 const ANNOUNCEMENT_MODAL_ID = 'announcement_modal_create';
 const ANNOUNCEMENT_ALLOWED_ROLE_IDS = new Set([
   '1238860450528235550',
-  '1449551727010254858',
-  '863814372610146314',
+  '1487449832061800721',
+  '1487464034880979144',
 ]);
 const pendingAnnouncementRoles = new Map();
 
@@ -92,7 +92,7 @@ const clientId = process.env.CLIENT_ID;
 const guildId = process.env.GUILD_ID?.trim();
 
 const SUPPORT_ROLE_ID = process.env.SUPPORT_ROLE_ID; // rola za support
-const PLAYER_ROLE_ID = '1238209853009297560';
+const PLAYER_ROLE_ID = '1487449859182039060';
 // secret za Farming Server webhooks
 const FS_WEBHOOK_SECRET = process.env.FS_WEBHOOK_SECRET;
 const BLACKLIST_LOG_CHANNEL_ID = '1483576763811364935';
@@ -2734,7 +2734,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.commandName === 'modal') {
       if (!memberHasAnyRole(interaction.member, ANNOUNCEMENT_ALLOWED_ROLE_IDS)) {
         return interaction.reply({
-          content: 'Samo Admin, Suvlasnik servera i Vlasnik mogu koristiti ovu komandu.',
+          content: 'Samo Admin, Suvlasnik servera i Gazda mogu koristiti ovu komandu.',
           ephemeral: true,
         });
       }
