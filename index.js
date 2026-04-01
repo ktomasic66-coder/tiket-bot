@@ -2901,31 +2901,20 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
           ephemeral: true,
         });
       }
-
-      const farmKey = interaction.options.getString('farm', true);
-      const farm = getFarmConfig(farmKey);
-      const value = interaction.options.getString('value', true).trim();
-
-      if (!value) {
-        return interaction.reply({
-          content: '⚠️ Moraš upisati oznaku polja (npr. `56-276`).',
-          ephemeral: true,
-        });
-      }
-
-      const fields = getFarmingFields(farm.key);
-      if (fields.includes(value)) {
-        return interaction.reply({
-          content: `⚠️ Polje **${value}** već postoji u listi za ${farm.label}.`,
-          ephemeral: true,
-        });
-      }
-
-      fields.push(value);
-      saveFarmingFields(farm.key, fields);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('field_add_button_farm1')
+          .setLabel('Dodaj u Farmu 1')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('field_add_button_farm2')
+          .setLabel('Dodaj u Farmu 2')
+          .setStyle(ButtonStyle.Success)
+      );
 
       return interaction.reply({
-        content: `✅ Polje **${value}** je dodano u listu za ${farm.label}.`,
+        content: 'Odaberi za koju farmu želiš dodati novo polje.',
+        components: [row],
         ephemeral: true,
       });
     }
@@ -2990,23 +2979,23 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
           ephemeral: true,
         });
       }
-      const farmKey = interaction.options.getString('farm', true);
-      const farm = getFarmConfig(farmKey);
-
       const embed = new EmbedBuilder()
         .setColor('#3ba55d')
-        .setTitle(`🧑‍🌾 Upravljanje poljima – ${farm.label}`)
+        .setTitle('🧑‍🌾 Upravljanje poljima')
         .setDescription(
-          `Ovdje možeš dodati nova polja za ${farm.label}.\n\n` +
-          'Klikni na gumb ispod, unesi oznaku polja (npr. `56-276`) i bot će ga spremiti.\n' +
-          `Ta polja se automatski koriste u **/${farm.key === 'farm1' ? 'task1' : 'task2'}** sistemu.`
+          'Ovdje možeš dodavati i uređivati polja za obje farme.\n\n' +
+          'Prvo odaberi radnju, a zatim će bot pitati za koju farmu radiš promjenu.'
         );
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`field_add_button_${farm.key}`)
-          .setLabel('➕ Dodaj novo polje')
-          .setStyle(ButtonStyle.Success)
+          .setCustomId('field_action_add')
+          .setLabel('➕ Dodaj polje')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('field_action_update')
+          .setLabel('✏️ Uredi polje')
+          .setStyle(ButtonStyle.Primary)
       );
 
       const panelChannel = await interaction.guild.channels
@@ -3022,7 +3011,7 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
 
       await panelChannel.send({ embeds: [embed], components: [row] });
       await interaction.reply({
-        content: `✅ Panel za ${farm.label} je poslan u kanal <#${FARM_FIELD_PANEL_CHANNEL_ID}>.`,
+        content: `✅ Panel za polja je poslan u kanal <#${FARM_FIELD_PANEL_CHANNEL_ID}>.`,
         ephemeral: true,
       });
     }
@@ -3153,22 +3142,22 @@ if (interaction.commandName === 'update-field') {
     });
   }
 
-  const farmKey = interaction.options.getString('farm', true);
-  const farm = getFarmConfig(farmKey);
-  const modal = new ModalBuilder()
-    .setCustomId(`update_field_step1_${farm.key}`)
-    .setTitle(`Uredi polje – ${farm.label} – Korak 1`);
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('field_update_button_farm1')
+      .setLabel('Uredi Farmu 1')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('field_update_button_farm2')
+      .setLabel('Uredi Farmu 2')
+      .setStyle(ButtonStyle.Primary)
+  );
 
-  const input = new TextInputBuilder()
-    .setCustomId('old_field')
-    .setLabel('Koje polje želiš editovati? (npr. 5)')
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true);
-
-  const row = new ActionRowBuilder().addComponents(input);
-  modal.addComponents(row);
-
-  return interaction.showModal(modal);
+  return interaction.reply({
+    content: 'Odaberi za koju farmu želiš urediti polje.',
+    components: [row],
+    ephemeral: true,
+  });
 
 }
 
@@ -3400,6 +3389,44 @@ if (interaction.commandName === 'update-field') {
       return interaction.showModal(buildTicketQuestionModal(type, typeCfg, stepIndex));
     }
 
+    if (interaction.customId === 'field_action_add') {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('field_add_button_farm1')
+          .setLabel('Dodaj u Farmu 1')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('field_add_button_farm2')
+          .setLabel('Dodaj u Farmu 2')
+          .setStyle(ButtonStyle.Success)
+      );
+
+      return interaction.reply({
+        content: 'Za koju farmu želiš dodati polje?',
+        components: [row],
+        ephemeral: true,
+      });
+    }
+
+    if (interaction.customId === 'field_action_update') {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('field_update_button_farm1')
+          .setLabel('Uredi Farmu 1')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('field_update_button_farm2')
+          .setLabel('Uredi Farmu 2')
+          .setStyle(ButtonStyle.Primary)
+      );
+
+      return interaction.reply({
+        content: 'Za koju farmu želiš urediti polje?',
+        components: [row],
+        ephemeral: true,
+      });
+    }
+
     // === FARMING: dugme za dodavanje polja (iz field-panel poruke) ===
     if (
       interaction.customId === 'field_add_button_farm1' ||
@@ -3431,6 +3458,33 @@ if (interaction.commandName === 'update-field') {
 
       await interaction.showModal(modal);
       return;
+    }
+
+    if (
+      interaction.customId === 'field_update_button_farm1' ||
+      interaction.customId === 'field_update_button_farm2'
+    ) {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({
+          content: '⛔ Samo staff može uređivati polja.',
+          ephemeral: true,
+        });
+      }
+
+      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
+      const farm = getFarmConfig(farmKey);
+      const modal = new ModalBuilder()
+        .setCustomId(`update_field_step1_${farm.key}`)
+        .setTitle(`Uredi polje – ${farm.label} – Korak 1`);
+
+      const input = new TextInputBuilder()
+        .setCustomId('old_field')
+        .setLabel('Koje polje želiš editovati?')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      return interaction.showModal(modal);
     }
 
     // === FARMING: START KREIRANJA POSLA === 
@@ -4093,6 +4147,28 @@ if (!task.cropName) {
 
   // ---------- MODALI (FIELD ADD + SIJANJE + KOMBAJNIRANJE) ----------
   if (interaction.isModalSubmit()) {
+    if (
+      interaction.customId === 'update_field_step1_farm1' ||
+      interaction.customId === 'update_field_step1_farm2'
+    ) {
+      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
+      const farm = getFarmConfig(farmKey);
+      const oldField = interaction.fields.getTextInputValue('old_field').trim();
+
+      const modal = new ModalBuilder()
+        .setCustomId(`update_field_step2_${farm.key}__${oldField}`)
+        .setTitle(`Uredi polje – ${farm.label} – Korak 2`);
+
+      const input = new TextInputBuilder()
+        .setCustomId('new_field')
+        .setLabel(`Novo ime za polje ${oldField}`)
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      return interaction.showModal(modal);
+    }
+
     if (interaction.customId === ANNOUNCEMENT_MODAL_ID) {
       if (!memberHasAnyRole(interaction.member, ANNOUNCEMENT_ALLOWED_ROLE_IDS)) {
         return interaction.reply({
@@ -4450,7 +4526,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
 
     // === 3) Update u svim farmingTasks
     for (const t of db.farmingTasks) {
-        if (t.field === oldField) {
+        if (t.field === oldField && resolveFarmConfig(t).key === farm.key) {
             t.field = newField;
         }
     }
@@ -4598,27 +4674,3 @@ client.login(token).catch((err) => {
   console.error('❌ Login error:', err);
   
 });
-
-
-
-    if (
-      interaction.customId === 'update_field_step1_farm1' ||
-      interaction.customId === 'update_field_step1_farm2'
-    ) {
-      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
-      const farm = getFarmConfig(farmKey);
-      const oldField = interaction.fields.getTextInputValue('old_field').trim();
-
-      const modal = new ModalBuilder()
-        .setCustomId(`update_field_step2_${farm.key}__${oldField}`)
-        .setTitle(`Uredi polje – ${farm.label} – Korak 2`);
-
-      const input = new TextInputBuilder()
-        .setCustomId('new_field')
-        .setLabel(`Novo ime za polje ${oldField}`)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
-
-      modal.addComponents(new ActionRowBuilder().addComponents(input));
-      return interaction.showModal(modal);
-    }

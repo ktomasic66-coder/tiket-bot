@@ -39,14 +39,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('add-field')
-    .setDescription('Dodaj novo polje u listu za Farming zadatke.')
-    .addStringOption(addFarmOption)
-    .addStringOption((opt) =>
-      opt
-        .setName('value')
-        .setDescription('Oznaka polja (npr. 56-276)')
-        .setRequired(true)
-    ),
+    .setDescription('Pokreni dodavanje novog polja u listu za Farming zadatke.'),
 
   new SlashCommandBuilder()
     .setName('remove-field')
@@ -61,8 +54,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('update-field')
-    .setDescription('Uredi postojece polje (prvo uneses staro polje, zatim novo ime polja).')
-    .addStringOption(addFarmOption),
+    .setDescription('Pokreni uredivanje postojeceg polja.'),
 
   new SlashCommandBuilder()
     .setName('reset-season')
@@ -75,8 +67,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('field-panel')
-    .setDescription('Posalji panel za upravljanje poljima (dodavanje polja) u ovaj kanal.')
-    .addStringOption(addFarmOption),
+    .setDescription('Posalji zajednicki panel za upravljanje poljima u kanal za polja.'),
 
   new SlashCommandBuilder()
     .setName('blacklist')
