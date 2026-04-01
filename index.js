@@ -3665,16 +3665,25 @@ if (interaction.commandName === 'update-field') {
       const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
       const farm = getFarmConfig(farmKey);
       const modal = new ModalBuilder()
-        .setCustomId(`update_field_step1_${farm.key}`)
-        .setTitle(`Uredi polje – ${farm.label} – Korak 1`);
+        .setCustomId(`update_field_modal_${farm.key}`)
+        .setTitle(`Uredi polje - ${farm.label}`);
 
-      const input = new TextInputBuilder()
+      const oldFieldInput = new TextInputBuilder()
         .setCustomId('old_field')
-        .setLabel('Koje polje želiš editovati?')
+        .setLabel('Koje polje zelis urediti?')
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
-      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      const newFieldInput = new TextInputBuilder()
+        .setCustomId('new_field')
+        .setLabel('Novo ime polja')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(oldFieldInput),
+        new ActionRowBuilder().addComponents(newFieldInput)
+      );
       return interaction.showModal(modal);
     }
 
@@ -4365,28 +4374,6 @@ if (!task.cropName) {
 
   // ---------- MODALI (FIELD ADD + SIJANJE + KOMBAJNIRANJE) ----------
   if (interaction.isModalSubmit()) {
-    if (
-      interaction.customId === 'update_field_step1_farm1' ||
-      interaction.customId === 'update_field_step1_farm2'
-    ) {
-      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
-      const farm = getFarmConfig(farmKey);
-      const oldField = interaction.fields.getTextInputValue('old_field').trim();
-
-      const modal = new ModalBuilder()
-        .setCustomId(`update_field_step2_${farm.key}__${oldField}`)
-        .setTitle(`Uredi polje – ${farm.label} – Korak 2`);
-
-      const input = new TextInputBuilder()
-        .setCustomId('new_field')
-        .setLabel(`Novo ime za polje ${oldField}`)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
-
-      modal.addComponents(new ActionRowBuilder().addComponents(input));
-      return interaction.showModal(modal);
-    }
-
     if (interaction.customId === ANNOUNCEMENT_MODAL_ID) {
       if (!memberHasAnyRole(interaction.member, ANNOUNCEMENT_ALLOWED_ROLE_IDS)) {
         return interaction.reply({
@@ -4744,12 +4731,13 @@ if (
     }
 
     // === UPDATE FIELD – STEP 2 (kompletan rename sistema) ===
-if (interaction.customId.startsWith("update_field_step2_")) {
-    const payload = interaction.customId.replace("update_field_step2_", "");
-    const separatorIndex = payload.indexOf("__");
-    const farmKey = separatorIndex === -1 ? "farm1" : payload.slice(0, separatorIndex);
-    const oldField = separatorIndex === -1 ? payload : payload.slice(separatorIndex + 2);
+if (
+    interaction.customId === "update_field_modal_farm1" ||
+    interaction.customId === "update_field_modal_farm2"
+) {
+    const farmKey = interaction.customId.endsWith("farm2") ? "farm2" : "farm1";
     const farm = getFarmConfig(farmKey);
+    const oldField = interaction.fields.getTextInputValue("old_field").trim();
     const newField = interaction.fields.getTextInputValue("new_field").trim();
 
     // === 1) Učitaj listu polja
