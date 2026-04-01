@@ -220,7 +220,10 @@ function getDefaultData() {
     ticketSystem: JSON.parse(JSON.stringify(DEFAULT_TICKET_SYSTEM)),
     // 🔹 ovdje ćemo spremati aktivne/završene FS zadatke (da ih možemo naći po polju)
     farmingTasks: [],
-    farmingFields: [...DEFAULT_FARMING_FIELDS],
+    farmingFields: {
+      farm1: [...DEFAULT_FARMING_FIELDS],
+      farm2: [],
+    },
     sowingSeasons: [...DEFAULT_SOWING_SEASONS],   // ✅ OVO NEDOSTAJE
   };
 }
@@ -277,7 +280,7 @@ function mergeDbData(raw) {
       },
     },
     farmingTasks: Array.isArray(data.farmingTasks) ? data.farmingTasks : base.farmingTasks,
-    farmingFields: Array.isArray(data.farmingFields) ? data.farmingFields : base.farmingFields,
+    farmingFields: normalizeFarmingFields(data.farmingFields),
     sowingSeasons: Array.isArray(data.sowingSeasons) ? data.sowingSeasons : base.sowingSeasons,
   };
 }
@@ -316,7 +319,7 @@ function mergeRemoteSharedConfigIntoCache(remoteData) {
     ticketSubmissions: Array.isArray(dbCache.ticketSubmissions) ? dbCache.ticketSubmissions : [],
     ticketRecords: Array.isArray(dbCache.ticketRecords) ? dbCache.ticketRecords : [],
     farmingTasks: Array.isArray(dbCache.farmingTasks) ? dbCache.farmingTasks : [],
-    farmingFields: Array.isArray(dbCache.farmingFields) ? dbCache.farmingFields : [],
+    farmingFields: normalizeFarmingFields(dbCache.farmingFields),
     sowingSeasons: Array.isArray(dbCache.sowingSeasons) ? dbCache.sowingSeasons : [],
   });
 }
