@@ -323,13 +323,14 @@ function mergeRemoteSharedConfigIntoCache(remoteData) {
     ticketBlacklist: Array.isArray(dbCache.ticketBlacklist) ? dbCache.ticketBlacklist : [],
     ticketSubmissions: Array.isArray(dbCache.ticketSubmissions) ? dbCache.ticketSubmissions : [],
     ticketRecords: Array.isArray(dbCache.ticketRecords) ? dbCache.ticketRecords : [],
-    farmingTasks: Array.isArray(dbCache.farmingTasks) ? dbCache.farmingTasks : [],
-    farmingFields: normalizeFarmingFields(dbCache.farmingFields),
+    farmingTasks: Array.isArray(mergedRemote.farmingTasks) ? mergedRemote.farmingTasks : [],
+    farmingFields: normalizeFarmingFields(mergedRemote.farmingFields),
     farmingFieldListMessageId:
-      typeof dbCache.farmingFieldListMessageId === 'string' || dbCache.farmingFieldListMessageId === null
-        ? dbCache.farmingFieldListMessageId
+      typeof mergedRemote.farmingFieldListMessageId === 'string' ||
+      mergedRemote.farmingFieldListMessageId === null
+        ? mergedRemote.farmingFieldListMessageId
         : null,
-    sowingSeasons: Array.isArray(dbCache.sowingSeasons) ? dbCache.sowingSeasons : [],
+    sowingSeasons: Array.isArray(mergedRemote.sowingSeasons) ? mergedRemote.sowingSeasons : [],
   });
 }
 
@@ -349,6 +350,60 @@ async function refreshSharedBotConfigFromMySql(force) {
   } catch (err) {
     console.log('Shared bot config refresh error:', err.message);
     return false;
+  }
+}
+
+async function readFarmingFieldsFromMySql() {
+  if (!useMySql || !dbPool) return null;
+
+  const [rows] = await dbPool.query(
+    `SELECT farm_key, field_value
+     FROM farming_fields
+     ORDER BY farm_key ASC, field_value ASC`
+  );
+
+  if (!rows.length) return null;
+
+  const grouped = { farm1: [], farm2: [] };
+  for (const row of rows) {
+    const farmKey = String(row.farm_key || '').trim();
+    if (!grouped[farmKey]) grouped[farmKey] = [];
+    grouped[farmKey].push(String(row.field_value));
+  }
+
+  return normalizeFarmingFields(grouped);
+}
+
+async function persistFarmingFieldsToMySql(fieldsByFarm) {
+  if (!useMySql || !dbPool) return;
+
+  const normalized = normalizeFarmingFields(fieldsByFarm);
+  const rows = [];
+
+  for (const farmKey of Object.keys(normalized)) {
+    for (const fieldValue of normalized[farmKey]) {
+      rows.push([farmKey, String(fieldValue)]);
+    }
+  }
+
+  const conn = await dbPool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query('DELETE FROM farming_fields');
+
+    if (rows.length) {
+      await conn.query(
+        'INSERT INTO farming_fields (farm_key, field_value) VALUES ?',
+        [rows]
+      );
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
   }
 }
 
@@ -487,6 +542,15 @@ async function initMySql() {
         PRIMARY KEY (guild_id, user_id)
       )
     `);
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS farming_fields (
+        farm_key VARCHAR(20) NOT NULL,
+        field_value VARCHAR(120) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (farm_key, field_value)
+      )
+    `);
 
     const row = await readSharedBotConfigRow();
 
@@ -499,9 +563,26 @@ async function initMySql() {
     }
 
     useMySql = true;
+    const sqlFields = await readFarmingFieldsFromMySql();
+    if (sqlFields) {
+      dbCache.farmingFields = sqlFields;
+      fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
+    } else {
+      await persistFarmingFieldsToMySql(dbCache.farmingFields);
+    }
     await migrateLegacyTicketBlacklist();
     setInterval(() => {
       refreshSharedBotConfigFromMySql(false).catch(() => {});
+      readFarmingFieldsFromMySql()
+        .then((fields) => {
+          if (!fields) return;
+          dbCache = mergeDbData({
+            ...dbCache,
+            farmingFields: fields,
+          });
+          fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
+        })
+        .catch(() => {});
     }, 15000);
     console.log('Bot koristi zajednički MySQL storage.');
   } catch (err) {
@@ -756,6 +837,9 @@ function saveFarmingFields(farmKey, fields) {
   normalized[farmKey] = Array.from(new Set(fields.map(String)));
   data.farmingFields = normalized;
   saveDb(data);
+  persistFarmingFieldsToMySql(normalized).catch((err) => {
+    console.log('FARMING FIELDS SAVE ERROR:', err.message);
+  });
 }
 
 function buildFarmingFieldPanelEmbed() {
