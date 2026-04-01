@@ -2891,9 +2891,10 @@ client.on('interactionCreate', async (interaction) => {
         });
       }
 
-      const selectedRole = interaction.options.getRole('uloga');
+      const selectedRole1 = interaction.options.getRole('uloga1', true);
+      const selectedRole2 = interaction.options.getRole('uloga2');
       pendingAnnouncementRoles.set(interaction.user.id, {
-        roleId: selectedRole?.id || null,
+        roleIds: [selectedRole1?.id, selectedRole2?.id].filter(Boolean),
         channelId: interaction.channelId,
       });
 
@@ -4292,8 +4293,8 @@ if (!task.cropName) {
         .trim();
       const pendingRole = pendingAnnouncementRoles.get(interaction.user.id);
       const roleLine =
-        pendingRole?.channelId === interaction.channelId && pendingRole?.roleId
-          ? `\n\n<@&${pendingRole.roleId}>`
+        pendingRole?.channelId === interaction.channelId && Array.isArray(pendingRole?.roleIds)
+          ? pendingRole.roleIds.map((roleId) => `<@&${roleId}>`).join(' ')
           : '';
 
       pendingAnnouncementRoles.delete(interaction.user.id);

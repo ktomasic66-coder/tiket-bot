@@ -32,8 +32,14 @@ const commands = [
     .setDescription('Otvori announcement modal i posalji poruku u ovaj kanal.')
     .addRoleOption((opt) =>
       opt
-        .setName('uloga')
-        .setDescription('Opcionalna uloga koja ce biti navedena na dnu poruke')
+        .setName('uloga1')
+        .setDescription('Obavezna uloga koja ce biti navedena na dnu poruke')
+        .setRequired(true)
+    )
+    .addRoleOption((opt) =>
+      opt
+        .setName('uloga2')
+        .setDescription('Opcionalna druga uloga koja ce biti navedena na dnu poruke')
         .setRequired(false)
     ),
 
