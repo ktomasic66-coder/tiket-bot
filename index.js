@@ -224,6 +224,7 @@ function getDefaultData() {
       farm1: [...DEFAULT_FARMING_FIELDS],
       farm2: [],
     },
+    farmingFieldListMessageId: null,
     sowingSeasons: [...DEFAULT_SOWING_SEASONS],   // ✅ OVO NEDOSTAJE
   };
 }
@@ -281,6 +282,10 @@ function mergeDbData(raw) {
     },
     farmingTasks: Array.isArray(data.farmingTasks) ? data.farmingTasks : base.farmingTasks,
     farmingFields: normalizeFarmingFields(data.farmingFields),
+    farmingFieldListMessageId:
+      typeof data.farmingFieldListMessageId === 'string' || data.farmingFieldListMessageId === null
+        ? data.farmingFieldListMessageId
+        : base.farmingFieldListMessageId,
     sowingSeasons: Array.isArray(data.sowingSeasons) ? data.sowingSeasons : base.sowingSeasons,
   };
 }
@@ -320,6 +325,10 @@ function mergeRemoteSharedConfigIntoCache(remoteData) {
     ticketRecords: Array.isArray(dbCache.ticketRecords) ? dbCache.ticketRecords : [],
     farmingTasks: Array.isArray(dbCache.farmingTasks) ? dbCache.farmingTasks : [],
     farmingFields: normalizeFarmingFields(dbCache.farmingFields),
+    farmingFieldListMessageId:
+      typeof dbCache.farmingFieldListMessageId === 'string' || dbCache.farmingFieldListMessageId === null
+        ? dbCache.farmingFieldListMessageId
+        : null,
     sowingSeasons: Array.isArray(dbCache.sowingSeasons) ? dbCache.sowingSeasons : [],
   });
 }
@@ -359,6 +368,7 @@ async function persistDbCache() {
         ticketRecords: payload.ticketRecords,
         farmingTasks: payload.farmingTasks,
         farmingFields: payload.farmingFields,
+        farmingFieldListMessageId: payload.farmingFieldListMessageId,
         sowingSeasons: payload.sowingSeasons,
       });
     }
@@ -745,6 +755,79 @@ function saveFarmingFields(farmKey, fields) {
   const normalized = normalizeFarmingFields(data.farmingFields);
   normalized[farmKey] = Array.from(new Set(fields.map(String)));
   data.farmingFields = normalized;
+  saveDb(data);
+}
+
+function buildFarmingFieldPanelEmbed() {
+  const allFields = getAllFarmingFields();
+  const farm1Fields = allFields.farm1 || [];
+  const farm2Fields = allFields.farm2 || [];
+  const emptyValue = '\u200B';
+
+  const embed = new EmbedBuilder()
+    .setColor('#3ba55d')
+    .setTitle('🧑‍🌾 Upravljanje poljima')
+    .setDescription(
+      'Ovdje možeš dodavati i uređivati polja za obje farme.\n\n' +
+      'Prvo odaberi radnju, a zatim će bot pitati za koju farmu radiš promjenu.'
+    )
+    .addFields(
+      {
+        name: 'Farma 1',
+        value: farm1Fields.length ? farm1Fields.map((field) => `- ${field}`).join('\n') : emptyValue,
+        inline: true,
+      },
+      {
+        name: 'Farma 2',
+        value: farm2Fields.length ? farm2Fields.map((field) => `- ${field}`).join('\n') : emptyValue,
+        inline: true,
+      }
+    )
+    .setTimestamp();
+
+  return embed;
+}
+
+function buildFarmingFieldPanelRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('field_action_add')
+      .setLabel('➕ Dodaj polje')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('field_action_update')
+      .setLabel('✏️ Uredi polje')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('field_action_remove')
+      .setLabel('🗑️ Obriši polje')
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+async function updateFarmingFieldsEmbed(guild) {
+  if (!guild) return;
+
+  const channel = await guild.channels.fetch(FARM_FIELD_PANEL_CHANNEL_ID).catch(() => null);
+  if (!channel) return;
+
+  const data = loadDb();
+  const embed = buildFarmingFieldPanelEmbed();
+  const row = buildFarmingFieldPanelRow();
+
+  if (data.farmingFieldListMessageId) {
+    const existingMessage = await channel.messages
+      .fetch(data.farmingFieldListMessageId)
+      .catch(() => null);
+
+    if (existingMessage) {
+      await existingMessage.edit({ embeds: [embed], components: [row] });
+      return;
+    }
+  }
+
+  const sent = await channel.send({ embeds: [embed], components: [row] });
+  data.farmingFieldListMessageId = sent.id;
   saveDb(data);
 }
 
@@ -1980,6 +2063,7 @@ client.once('ready', async () => {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (guild) {
       await updateSeasonEmbed(guild);
+      await updateFarmingFieldsEmbed(guild);
       console.log("🌾 Sezona Sjetve — embed obnovljen pri startu bota.");
     }
   } catch (err) {
@@ -2977,29 +3061,6 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
           ephemeral: true,
         });
       }
-      const embed = new EmbedBuilder()
-        .setColor('#3ba55d')
-        .setTitle('🧑‍🌾 Upravljanje poljima')
-        .setDescription(
-          'Ovdje možeš dodavati i uređivati polja za obje farme.\n\n' +
-          'Prvo odaberi radnju, a zatim će bot pitati za koju farmu radiš promjenu.'
-        );
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('field_action_add')
-          .setLabel('➕ Dodaj polje')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('field_action_update')
-          .setLabel('✏️ Uredi polje')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('field_action_remove')
-          .setLabel('🗑️ Obriši polje')
-          .setStyle(ButtonStyle.Danger)
-      );
-
       const panelChannel = await interaction.guild.channels
         .fetch(FARM_FIELD_PANEL_CHANNEL_ID)
         .catch(() => null);
@@ -3011,7 +3072,7 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
         });
       }
 
-      await panelChannel.send({ embeds: [embed], components: [row] });
+      await updateFarmingFieldsEmbed(interaction.guild);
       await interaction.reply({
         content: `✅ Panel za polja je poslan u kanal <#${FARM_FIELD_PANEL_CHANNEL_ID}>.`,
         ephemeral: true,
@@ -4403,6 +4464,7 @@ if (!task.cropName) {
 
       fields.push(value);
       saveFarmingFields(farm.key, fields);
+      await updateFarmingFieldsEmbed(interaction.guild);
 
       return interaction.reply({
         content: `✅ Polje **${value}** je dodano u listu za ${farm.label}.`,
@@ -4436,6 +4498,7 @@ if (!task.cropName) {
 
       fields.splice(index, 1);
       saveFarmingFields(farm.key, fields);
+      await updateFarmingFieldsEmbed(interaction.guild);
 
       return interaction.reply({
         content: `🗑️ Polje **${value}** je uklonjeno iz liste za ${farm.label}.`,
@@ -4601,6 +4664,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
     // zamijeni u listi polja
     fields[index] = newField;
     saveFarmingFields(farm.key, fields);
+    await updateFarmingFieldsEmbed(interaction.guild);
 
     // === 2) Učitaj DB jer mijenjamo još stvari
     const db = loadDb();
