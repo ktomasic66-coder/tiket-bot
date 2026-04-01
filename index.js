@@ -1538,14 +1538,16 @@ function saveFarmingTask(record) {
 }
 
 // pronađi zadatak po polju koji je još "open"
-function findOpenTaskByField(field) {
+function findOpenTaskByField(field, farmKey = null) {
   const data = loadDb();
   if (!Array.isArray(data.farmingTasks)) return null;
 
   // tražimo od kraja (najnoviji)
   for (let i = data.farmingTasks.length - 1; i >= 0; i--) {
     const t = data.farmingTasks[i];
-    if (t.field === field && t.status === 'open') return t;
+    if (t.field !== field || t.status !== 'open') continue;
+    if (farmKey && resolveFarmConfig(t).key !== farmKey) continue;
+    return t;
   }
   return null;
 }
@@ -1553,7 +1555,9 @@ function findOpenTaskByField(field) {
 // označi zadatak kao završen + prebaci embed u "završene poslove"
 // ili kreiraj novi završen zadatak ako ne postoji
 async function finishTaskFromFsUpdate(field, payload) {
-  const task = findOpenTaskByField(field);
+  const payloadFarmKey = String(payload.farm || payload.farmKey || '').trim().toLowerCase();
+  const task = findOpenTaskByField(field, payloadFarmKey || null);
+  const farm = task ? resolveFarmConfig(task) : getFarmConfig(payloadFarmKey || 'farm1');
   const finishedBy = payload.player || 'FS Server';
   const status = payload.status || 'finished';
   const jobFromFs = payload.job || null;
@@ -1562,12 +1566,8 @@ async function finishTaskFromFsUpdate(field, payload) {
   const guild = await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) return false;
 
-  const jobChannel = await client.channels
-    .fetch(FS_JOB_CHANNEL_ID)
-    .catch(() => null);
-  const doneChannel = await client.channels
-    .fetch(FS_JOB_DONE_CHANNEL_ID)
-    .catch(() => null);
+  const jobChannel = await client.channels.fetch(farm.jobChannelId).catch(() => null);
+  const doneChannel = await client.channels.fetch(farm.doneChannelId).catch(() => null);
 
   if (!doneChannel) return false;
 
@@ -1588,6 +1588,8 @@ async function finishTaskFromFsUpdate(field, payload) {
     const msg = await doneChannel.send({ embeds: [embed] });
 
     saveFarmingTask({
+      farmKey: farm.key,
+      farmLabel: farm.label,
       field,
       jobName,
       status: 'done',
@@ -1636,6 +1638,7 @@ async function finishTaskFromFsUpdate(field, payload) {
     data.farmingTasks[idx].status = 'done';
     data.farmingTasks[idx].finishedBy = finishedBy;
     data.farmingTasks[idx].finishedAt = new Date().toISOString();
+    data.farmingTasks[idx].farmKey = resolveFarmConfig(data.farmingTasks[idx]).key;
     saveDb(data);
   }
 
@@ -1715,11 +1718,42 @@ const TICKET_CATEGORY_ID = '1437220354992115912';
 // ❗ kanal gdje ide TRANSKRIPT zatvorenih tiketa  (default, može se override-ati u dashboardu)
 const TICKET_LOG_CHANNEL_ID = '1437218054718095410';
 
-// ❗ kanal gdje idu AKTIVNI FARMING poslovi (npr. #posao-na-farmi)
-const FS_JOB_CHANNEL_ID = '1442984129699254292';
+const FARM_CONFIGS = {
+  farm1: {
+    key: 'farm1',
+    label: 'Farma 1',
+    jobChannelId: '1488991604718043359',
+    doneChannelId: '1488991718798917823',
+  },
+  farm2: {
+    key: 'farm2',
+    label: 'Farma 2',
+    jobChannelId: '1488991802177486939',
+    doneChannelId: '1488991841834766356',
+  },
+};
 
-// ❗ kanal gdje idu ZAVRŠENI poslovi (npr. #zavrseni-poslovi)
-const FS_JOB_DONE_CHANNEL_ID = '1442951254287454399';
+function getFarmConfig(farmKey) {
+  return FARM_CONFIGS[farmKey] || FARM_CONFIGS.farm1;
+}
+
+function resolveFarmConfig(taskLike = {}) {
+  if (taskLike.farmKey && FARM_CONFIGS[taskLike.farmKey]) {
+    return FARM_CONFIGS[taskLike.farmKey];
+  }
+
+  const byActiveChannel = Object.values(FARM_CONFIGS).find(
+    (farm) => farm.jobChannelId === taskLike.channelId
+  );
+  if (byActiveChannel) return byActiveChannel;
+
+  const byDoneChannel = Object.values(FARM_CONFIGS).find(
+    (farm) => farm.doneChannelId === taskLike.channelId
+  );
+  if (byDoneChannel) return byDoneChannel;
+
+  return FARM_CONFIGS.farm1;
+}
 
 // ❗ kanal gdje idu FS25 TELEMETRY logovi (embed s vozilom)
 const FS_TELEMETRY_CHANNEL_ID = process.env.FS_TELEMETRY_CHANNEL_ID || '';
@@ -1861,7 +1895,7 @@ async function removeBlacklistRole(member) {
 }
 
 // mapa za FARMING zadatke (po korisniku)
-const activeTasks = new Map(); // key: userId, value: { field: string | null }
+const activeTasks = new Map(); // key: userId, value: { field: string | null, farmKey?: string }
 const pendingTicketForms = new Map(); // key: userId, value: { type, questions, answers }
 
 // === mapa za ticket REMINDER-e (kanal -> intervalId) ===
@@ -2802,17 +2836,27 @@ if (interaction.commandName === 'task-panel') {
   const embed = new EmbedBuilder()
     .setColor('#ffd900')
     .setTitle('🚜 Farming – Zadaci')
-    .setDescription('Odaberi što želiš kreirati.');
+    .setDescription('Odaberi za koju farmu želiš kreirati posao ili opći zadatak.');
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('task_start')
-      .setLabel('➕ Kreiraj posao (polja)')
+      .setCustomId('task_start_farm1')
+      .setLabel('➕ Farma 1 posao')
       .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
-      .setCustomId('task_general_start')
-      .setLabel('📝 Kreiraj zadatak')
+      .setCustomId('task_general_start_farm1')
+      .setLabel('📝 Farma 1 zadatak')
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId('task_start_farm2')
+      .setLabel('➕ Farma 2 posao')
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId('task_general_start_farm2')
+      .setLabel('📝 Farma 2 zadatak')
       .setStyle(ButtonStyle.Primary)
   );
 
@@ -3337,8 +3381,10 @@ if (interaction.commandName === 'update-field') {
     }
 
     // === FARMING: START KREIRANJA POSLA === 
-if (interaction.customId === 'task_start') {
-  activeTasks.set(interaction.user.id, { field: null });
+if (interaction.customId === 'task_start_farm1' || interaction.customId === 'task_start_farm2') {
+  const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
+  const farm = getFarmConfig(farmKey);
+  activeTasks.set(interaction.user.id, { field: null, farmKey: farm.key });
 
   const FIELDS = getFarmingFields();
   const perRow = 5;
@@ -3363,7 +3409,7 @@ if (interaction.customId === 'task_start') {
   const embed = new EmbedBuilder()
     .setColor('#ffd900')
     .setTitle('🚜 Kreiranje zadatka – Korak 1')
-    .setDescription('Odaberi polje za koje želiš kreirati posao.');
+    .setDescription(`${farm.label}\n\nOdaberi polje za koje želiš kreirati posao.`);
 
   await interaction.reply({
     embeds: [embed],
@@ -3375,10 +3421,15 @@ if (interaction.customId === 'task_start') {
 
 
 // === OPĆI ZADATAK: START (BEZ POLJA) ===
-if (interaction.customId === 'task_general_start') {
+if (
+  interaction.customId === 'task_general_start_farm1' ||
+  interaction.customId === 'task_general_start_farm2'
+) {
+  const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
+  const farm = getFarmConfig(farmKey);
   const modal = new ModalBuilder()
-    .setCustomId('task_general_modal')
-    .setTitle('📝 Novi zadatak');
+    .setCustomId(`task_general_modal_${farm.key}`)
+    .setTitle(`📝 Novi zadatak – ${farm.label}`);
 
   const titleInput = new TextInputBuilder()
     .setCustomId('task_title')
@@ -3407,6 +3458,7 @@ if (interaction.customId === 'task_general_start') {
       const fieldId = interaction.customId.replace('task_field_', '');
 
       const current = activeTasks.get(interaction.user.id) || {};
+      const farm = getFarmConfig(current.farmKey || 'farm1');
       current.field = fieldId;
       activeTasks.set(interaction.user.id, current);
 
@@ -3414,7 +3466,7 @@ if (interaction.customId === 'task_general_start') {
         .setColor('#00a84d')
         .setTitle('🚜 Kreiranje zadatka – Korak 2')
         .setDescription(
-          `Odabrano polje: **Polje ${fieldId}**\n\nSada odaberi vrstu posla:`
+          `${farm.label}\nOdabrano polje: **Polje ${fieldId}**\n\nSada odaberi vrstu posla:`
         );
 
       const jobsRow1 = new ActionRowBuilder().addComponents(
@@ -3534,6 +3586,7 @@ if (!current || !current.field) {
 }
 
 const jobKey = interaction.customId.replace('task_job_', '');
+const farm = getFarmConfig(current.farmKey || 'farm1');
 const jobNames = {
   oranje: 'Oranje',
   lajn: 'Bacanje lajma',
@@ -3566,6 +3619,7 @@ const embed = new EmbedBuilder()
   .setColor('#5865f2')
   .setTitle('🚦 Odaberi prioritet posla')
   .setDescription(
+    `🏡 **Farma:** ${farm.label}\n` +
     `🚜 **Polje:** ${current.field}\n` +
     `🛠️ **Posao:** ${current.jobName}\n\n` +
     'Odaberi prioritet:'
@@ -3620,6 +3674,7 @@ if (interaction.customId.startsWith('task_priority_')) {
   const key = interaction.customId.replace('task_priority_', '');
   const prio = priorities[key];
   if (!prio) return;
+  const farm = getFarmConfig(current.farmKey || 'farm1');
 
   // ==============================
   // 📝 OPĆI ZADATAK (BEZ POLJA)
@@ -3629,6 +3684,7 @@ if (interaction.customId.startsWith('task_priority_')) {
       .setColor(prio.color)
       .setTitle(`${prio.label} – Zadatak`)
       .addFields(
+        { name: 'Farma', value: farm.label, inline: true },
         { name: 'Zadatak', value: current.title, inline: false },
         ...(current.description
           ? [{ name: 'Opis', value: current.description, inline: false }]
@@ -3644,13 +3700,15 @@ if (interaction.customId.startsWith('task_priority_')) {
         .setStyle(ButtonStyle.Success)
     );
 
-    const jobChannel = await interaction.guild.channels.fetch(FS_JOB_CHANNEL_ID);
+    const jobChannel = await interaction.guild.channels.fetch(farm.jobChannelId);
     const sentMsg = await jobChannel.send({
       embeds: [embed],
       components: [row],
     });
 
     saveFarmingTask({
+      farmKey: farm.key,
+      farmLabel: farm.label,
       type: 'general',
       title: current.title,
       description: current.description,
@@ -3686,6 +3744,7 @@ if (interaction.customId.startsWith('task_priority_')) {
     .setColor(prio.color)
     .setTitle(`${prio.label} – Novi zadatak`)
     .addFields(
+      { name: 'Farma', value: farm.label, inline: true },
       { name: 'Polje', value: `Polje ${current.field}`, inline: true },
       { name: 'Posao', value: current.jobName, inline: true },
       { name: 'Izradio', value: `<@${interaction.user.id}>`, inline: true },
@@ -3699,13 +3758,15 @@ if (interaction.customId.startsWith('task_priority_')) {
       .setStyle(ButtonStyle.Success)
   );
 
-  const jobChannel = await interaction.guild.channels.fetch(FS_JOB_CHANNEL_ID);
+  const jobChannel = await interaction.guild.channels.fetch(farm.jobChannelId);
   const sentMsg = await jobChannel.send({
     embeds: [embed],
     components: [row],
   });
 
   saveFarmingTask({
+    farmKey: farm.key,
+    farmLabel: farm.label,
     field: current.field,
     jobKey: current.jobKey,
     jobName: current.jobName,
@@ -3803,6 +3864,7 @@ if (interaction.customId === 'task_done') {
   // 🔍 PRONAĐI ZADATAK U DB-u PO PORUKI
   const db = loadDb();
   const task = db.farmingTasks.find(t => t.messageId === interaction.message.id);
+  const farm = resolveFarmConfig(task || { channelId: interaction.channelId });
 
   // 🌾 Ako je ovo bio zadatak SIJANJA → upis u sezonu
   if (task && task.jobKey === 'sijanje') {
@@ -3838,9 +3900,19 @@ if (!task.cropName) {
     })
     .setTimestamp();
 
-  const doneChannel = await interaction.guild.channels.fetch(FS_JOB_DONE_CHANNEL_ID);
+  const doneChannel = await interaction.guild.channels.fetch(farm.doneChannelId);
 
   await doneChannel.send({ embeds: [finishedEmbed] });
+
+  if (task) {
+    task.status = 'done';
+    task.channelId = doneChannel.id;
+    task.farmKey = farm.key;
+    task.farmLabel = farm.label;
+    task.finishedBy = interaction.user.tag;
+    task.finishedAt = new Date().toISOString();
+    saveDb(db);
+  }
 
   await interaction.reply({
     content:
@@ -4157,21 +4229,29 @@ if (!task.cropName) {
     }
 
     // 📝 OPĆI ZADATAK – MODAL SUBMIT → PRIORITET
-if (interaction.customId === 'task_general_modal') {
+if (
+  interaction.customId === 'task_general_modal_farm1' ||
+  interaction.customId === 'task_general_modal_farm2'
+) {
   const title = interaction.fields.getTextInputValue('task_title');
   const description =
     interaction.fields.getTextInputValue('task_description') || '';
+  const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
 
   activeTasks.set(interaction.user.id, {
     type: 'general',
+    farmKey,
     title,
     description,
   });
+
+  const farm = getFarmConfig(farmKey);
 
   const embed = new EmbedBuilder()
     .setColor('#5865f2')
     .setTitle('🚦 Odaberi prioritet')
     .setDescription(
+      `🏡 **Farma:** ${farm.label}\n` +
       `📝 **Zadatak:** ${title}\n` +
       (description ? `📄 ${description}\n\n` : '\n') +
       'Odaberi prioritet:'
@@ -4219,6 +4299,7 @@ if (interaction.customId === 'task_general_modal') {
       }
 
       const seedName = interaction.fields.getTextInputValue('seed_name');
+      const farm = getFarmConfig(current.farmKey || 'farm1');
 
       // 🌱 Sezona Sjetve – registracija novog posijanog polja
       await handleNewSowingTask(interaction.guild, current.field, seedName);
@@ -4228,6 +4309,7 @@ if (interaction.customId === 'task_general_modal') {
         .setColor('#00a84d')
         .setTitle('✅ Novi zadatak kreiran')
         .addFields(
+          { name: 'Farma', value: farm.label, inline: true },
           { name: 'Polje', value: `Polje ${current.field}`, inline: true },
           { name: 'Posao', value: 'Sijanje', inline: true },
           { name: 'Kultura', value: seedName, inline: true },
@@ -4242,9 +4324,7 @@ if (interaction.customId === 'task_general_modal') {
           .setStyle(ButtonStyle.Success)
       );
 
-      const jobChannel = await interaction.guild.channels.fetch(
-        FS_JOB_CHANNEL_ID
-      );
+      const jobChannel = await interaction.guild.channels.fetch(farm.jobChannelId);
 
       await interaction.reply({
         content:
@@ -4258,6 +4338,8 @@ if (interaction.customId === 'task_general_modal') {
       });
 
       saveFarmingTask({
+        farmKey: farm.key,
+        farmLabel: farm.label,
         field: current.field,
         jobKey: 'sijanje',
         jobName: 'Sijanje',
@@ -4320,13 +4402,13 @@ if (interaction.customId.startsWith("update_field_step2_")) {
         const guild = interaction.guild;
 
         // aktivni channel
-        const jobCh = await guild.channels.fetch(FS_JOB_CHANNEL_ID).catch(() => null);
-        const doneCh = await guild.channels.fetch(FS_JOB_DONE_CHANNEL_ID).catch(() => null);
-
         const allTasks = db.farmingTasks.filter(t => t.field === newField);
 
         for (const t of allTasks) {
-            const ch = t.status === "open" ? jobCh : doneCh;
+            const taskFarm = resolveFarmConfig(t);
+            const channelId =
+              t.status === "open" ? taskFarm.jobChannelId : taskFarm.doneChannelId;
+            const ch = await guild.channels.fetch(channelId).catch(() => null);
             if (!ch) continue;
 
             const msg = await ch.messages.fetch(t.messageId).catch(() => null);
@@ -4394,11 +4476,13 @@ if (interaction.customId.startsWith("update_field_step2_")) {
       }
 
       const harvestInfo = interaction.fields.getTextInputValue('harvest_info');
+      const farm = getFarmConfig(current.farmKey || 'farm1');
 
       const embed = new EmbedBuilder()
         .setColor('#00a84d')
         .setTitle('✅ Novi zadatak kreiran')
         .addFields(
+          { name: 'Farma', value: farm.label, inline: true },
           { name: 'Polje', value: `Polje ${current.field}`, inline: true },
           { name: 'Posao', value: 'Kombajniranje', inline: true },
           { name: 'Detalji', value: harvestInfo, inline: true },
@@ -4413,9 +4497,7 @@ if (interaction.customId.startsWith("update_field_step2_")) {
           .setStyle(ButtonStyle.Success)
       );
 
-      const jobChannel = await interaction.guild.channels.fetch(
-        FS_JOB_CHANNEL_ID
-      );
+      const jobChannel = await interaction.guild.channels.fetch(farm.jobChannelId);
 
       await interaction.reply({
         content:
@@ -4429,6 +4511,8 @@ if (interaction.customId.startsWith("update_field_step2_")) {
       });
 
       saveFarmingTask({
+        farmKey: farm.key,
+        farmLabel: farm.label,
         field: current.field,
         jobKey: 'kombajniranje',
         jobName: 'Kombajniranje',
