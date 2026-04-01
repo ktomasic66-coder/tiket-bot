@@ -826,6 +826,30 @@ async function updateFarmingFieldsEmbed(guild) {
     }
   }
 
+  const recentMessages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+  if (recentMessages?.size) {
+    const matchingMessages = Array.from(recentMessages.values())
+      .filter(
+        (message) =>
+          message.author?.id === client.user?.id &&
+          message.embeds?.[0]?.title === '🧑‍🌾 Upravljanje poljima'
+      )
+      .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+
+    if (matchingMessages.length) {
+      const [primaryMessage, ...duplicates] = matchingMessages;
+      await primaryMessage.edit({ embeds: [embed], components: [row] });
+
+      for (const duplicate of duplicates) {
+        await duplicate.delete().catch(() => {});
+      }
+
+      data.farmingFieldListMessageId = primaryMessage.id;
+      saveDb(data);
+      return;
+    }
+  }
+
   const sent = await channel.send({ embeds: [embed], components: [row] });
   data.farmingFieldListMessageId = sent.id;
   saveDb(data);
