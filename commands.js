@@ -1,5 +1,15 @@
 const { SlashCommandBuilder } = require('discord.js');
 
+const addFarmOption = (option) =>
+  option
+    .setName('farm')
+    .setDescription('Odaberi farmu')
+    .setRequired(true)
+    .addChoices(
+      { name: 'Farma 1', value: 'farm1' },
+      { name: 'Farma 2', value: 'farm2' }
+    );
+
 const commands = [
   new SlashCommandBuilder()
     .setName('ticket-panel')
@@ -30,6 +40,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName('add-field')
     .setDescription('Dodaj novo polje u listu za Farming zadatke.')
+    .addStringOption(addFarmOption)
     .addStringOption((opt) =>
       opt
         .setName('value')
@@ -40,6 +51,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName('remove-field')
     .setDescription('Ukloni polje iz liste za Farming zadatke.')
+    .addStringOption(addFarmOption)
     .addStringOption((opt) =>
       opt
         .setName('value')
@@ -49,7 +61,8 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('update-field')
-    .setDescription('Uredi postojece polje (prvo uneses staro polje, zatim novo ime polja).'),
+    .setDescription('Uredi postojece polje (prvo uneses staro polje, zatim novo ime polja).')
+    .addStringOption(addFarmOption),
 
   new SlashCommandBuilder()
     .setName('reset-season')
@@ -57,11 +70,13 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('list-fields')
-    .setDescription('Prikazi sva polja dostupna u /task1 i /task2 panelima.'),
+    .setDescription('Prikazi sva polja dostupna za odabranu farmu.')
+    .addStringOption(addFarmOption),
 
   new SlashCommandBuilder()
     .setName('field-panel')
-    .setDescription('Posalji panel za upravljanje poljima (dodavanje polja) u ovaj kanal.'),
+    .setDescription('Posalji panel za upravljanje poljima (dodavanje polja) u ovaj kanal.')
+    .addStringOption(addFarmOption),
 
   new SlashCommandBuilder()
     .setName('blacklist')
