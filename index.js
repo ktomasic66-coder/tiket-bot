@@ -2831,32 +2831,24 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    // /task-panel – Farming zadaci
-if (interaction.commandName === 'task-panel') {
+    // /task1 i /task2 – Farming zadaci
+if (interaction.commandName === 'task1' || interaction.commandName === 'task2') {
+  const farmKey = interaction.commandName === 'task2' ? 'farm2' : 'farm1';
+  const farm = getFarmConfig(farmKey);
   const embed = new EmbedBuilder()
     .setColor('#ffd900')
-    .setTitle('🚜 Farming – Zadaci')
-    .setDescription('Odaberi za koju farmu želiš kreirati posao ili opći zadatak.');
+    .setTitle(`🚜 ${farm.label} – Zadaci`)
+    .setDescription(`Odaberi što želiš kreirati za ${farm.label}.`);
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('task_start_farm1')
-      .setLabel('➕ Farma 1 posao')
+      .setCustomId(`task_start_${farm.key}`)
+      .setLabel('➕ Kreiraj posao (polja)')
       .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
-      .setCustomId('task_general_start_farm1')
-      .setLabel('📝 Farma 1 zadatak')
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('task_start_farm2')
-      .setLabel('➕ Farma 2 posao')
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId('task_general_start_farm2')
-      .setLabel('📝 Farma 2 zadatak')
+      .setCustomId(`task_general_start_${farm.key}`)
+      .setLabel('📝 Kreiraj zadatak')
       .setStyle(ButtonStyle.Primary)
   );
 
@@ -2900,7 +2892,7 @@ if (interaction.commandName === 'task-panel') {
       saveFarmingFields(fields);
 
       return interaction.reply({
-        content: `✅ Polje **${value}** je dodano u listu. Dostupno je u task-panelu.`,
+        content: `✅ Polje **${value}** je dodano u listu. Dostupno je u /task1 i /task2 panelima.`,
         ephemeral: true,
       });
     }
@@ -2969,7 +2961,7 @@ if (interaction.commandName === 'task-panel') {
         .setDescription(
           'Ovdje možeš dodati nova polja za Farming zadatke.\n\n' +
           'Klikni na gumb ispod, unesi oznaku polja (npr. `56-276`) i bot će ga spremiti.\n' +
-          'Ta polja se automatski koriste u **task-panel** sistemu.'
+          'Ta polja se automatski koriste u **/task1** i **/task2** sistemu.'
         );
 
       const row = new ActionRowBuilder().addComponents(
@@ -4223,7 +4215,7 @@ if (!task.cropName) {
       saveFarmingFields(fields);
 
       return interaction.reply({
-        content: `✅ Polje **${value}** je dodano u listu. Dostupno je u task-panelu.`,
+        content: `✅ Polje **${value}** je dodano u listu. Dostupno je u /task1 i /task2 panelima.`,
         ephemeral: true,
       });
     }

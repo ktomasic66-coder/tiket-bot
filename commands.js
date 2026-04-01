@@ -6,8 +6,12 @@ const commands = [
     .setDescription('Posalji ticket panel u ovaj kanal.'),
 
   new SlashCommandBuilder()
-    .setName('task-panel')
-    .setDescription('Postavi Farming Simulator 25 panel za kreiranje zadataka u ovaj kanal.'),
+    .setName('task1')
+    .setDescription('Postavi Farming Simulator 25 panel za Farmu 1 u ovaj kanal.'),
+
+  new SlashCommandBuilder()
+    .setName('task2')
+    .setDescription('Postavi Farming Simulator 25 panel za Farmu 2 u ovaj kanal.'),
 
   new SlashCommandBuilder()
     .setName('anketa')
@@ -53,7 +57,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('list-fields')
-    .setDescription('Prikazi sva polja dostupna u task-panelu.'),
+    .setDescription('Prikazi sva polja dostupna u /task1 i /task2 panelima.'),
 
   new SlashCommandBuilder()
     .setName('field-panel')
