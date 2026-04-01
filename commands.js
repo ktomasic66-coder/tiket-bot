@@ -43,14 +43,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('remove-field')
-    .setDescription('Ukloni polje iz liste za Farming zadatke.')
-    .addStringOption(addFarmOption)
-    .addStringOption((opt) =>
-      opt
-        .setName('value')
-        .setDescription('Oznaka polja koju zelis ukloniti (npr. 56-276)')
-        .setRequired(true)
-    ),
+    .setDescription('Pokreni brisanje polja iz liste za Farming zadatke.'),
 
   new SlashCommandBuilder()
     .setName('update-field')

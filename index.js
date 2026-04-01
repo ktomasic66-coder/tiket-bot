@@ -2930,25 +2930,20 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
           ephemeral: true,
         });
       }
-
-      const farmKey = interaction.options.getString('farm', true);
-      const farm = getFarmConfig(farmKey);
-      const value = interaction.options.getString('value', true).trim();
-      const fields = getFarmingFields(farm.key);
-      const index = fields.indexOf(value);
-
-      if (index === -1) {
-        return interaction.reply({
-          content: `⚠️ Polje **${value}** nije pronađeno u listi za ${farm.label}.`,
-          ephemeral: true,
-        });
-      }
-
-      fields.splice(index, 1);
-      saveFarmingFields(farm.key, fields);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('field_remove_button_farm1')
+          .setLabel('Briši iz Farme 1')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('field_remove_button_farm2')
+          .setLabel('Briši iz Farme 2')
+          .setStyle(ButtonStyle.Danger)
+      );
 
       return interaction.reply({
-        content: `🗑️ Polje **${value}** je uklonjeno iz liste za ${farm.label}.`,
+        content: 'Odaberi za koju farmu želiš obrisati polje.',
+        components: [row],
         ephemeral: true,
       });
     }
@@ -2998,7 +2993,11 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
         new ButtonBuilder()
           .setCustomId('field_action_update')
           .setLabel('✏️ Uredi polje')
-          .setStyle(ButtonStyle.Primary)
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('field_action_remove')
+          .setLabel('🗑️ Obriši polje')
+          .setStyle(ButtonStyle.Danger)
       );
 
       const panelChannel = await interaction.guild.channels
@@ -3430,6 +3429,25 @@ if (interaction.commandName === 'update-field') {
       });
     }
 
+    if (interaction.customId === 'field_action_remove') {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('field_remove_button_farm1')
+          .setLabel('Briši iz Farme 1')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('field_remove_button_farm2')
+          .setLabel('Briši iz Farme 2')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      return interaction.reply({
+        content: 'Za koju farmu želiš obrisati polje?',
+        components: [row],
+        ephemeral: true,
+      });
+    }
+
     // === FARMING: dugme za dodavanje polja (iz field-panel poruke) ===
     if (
       interaction.customId === 'field_add_button_farm1' ||
@@ -3483,6 +3501,33 @@ if (interaction.commandName === 'update-field') {
       const input = new TextInputBuilder()
         .setCustomId('old_field')
         .setLabel('Koje polje želiš editovati?')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      return interaction.showModal(modal);
+    }
+
+    if (
+      interaction.customId === 'field_remove_button_farm1' ||
+      interaction.customId === 'field_remove_button_farm2'
+    ) {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({
+          content: '⛔ Samo staff/admin može brisati polja.',
+          ephemeral: true,
+        });
+      }
+
+      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
+      const farm = getFarmConfig(farmKey);
+      const modal = new ModalBuilder()
+        .setCustomId(`field_remove_modal_${farm.key}`)
+        .setTitle(`Brisanje polja – ${farm.label}`);
+
+      const input = new TextInputBuilder()
+        .setCustomId('field_value')
+        .setLabel('Koje polje želiš obrisati?')
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
@@ -4361,6 +4406,39 @@ if (!task.cropName) {
 
       return interaction.reply({
         content: `✅ Polje **${value}** je dodano u listu za ${farm.label}.`,
+        ephemeral: true,
+      });
+    }
+
+    if (
+      interaction.customId === 'field_remove_modal_farm1' ||
+      interaction.customId === 'field_remove_modal_farm2'
+    ) {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({
+          content: '⛔ Samo staff/admin može brisati polja.',
+          ephemeral: true,
+        });
+      }
+
+      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
+      const farm = getFarmConfig(farmKey);
+      const value = interaction.fields.getTextInputValue('field_value').trim();
+      const fields = getFarmingFields(farm.key);
+      const index = fields.indexOf(value);
+
+      if (index === -1) {
+        return interaction.reply({
+          content: `⚠️ Polje **${value}** nije pronađeno u listi za ${farm.label}.`,
+          ephemeral: true,
+        });
+      }
+
+      fields.splice(index, 1);
+      saveFarmingFields(farm.key, fields);
+
+      return interaction.reply({
+        content: `🗑️ Polje **${value}** je uklonjeno iz liste za ${farm.label}.`,
         ephemeral: true,
       });
     }
