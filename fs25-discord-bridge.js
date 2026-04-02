@@ -31,8 +31,10 @@ function loadEnvFile(filePath) {
 
 loadEnvFile(path.join(__dirname, ".env.fs25"));
 
-const LOG_PATH = process.env.FS25_LOG_PATH || "D:/home/sid_8486608/farmingSim_2025/profile/log.txt";
-const POLL_MS = 1000;
+const POLL_MS = Number(process.env.FS25_POLL_MS || 5000);
+const LOCAL_LOG_PATH = process.env.FS25_LOG_PATH || "D:/home/sid_8486608/farmingSim_2025/profile/log.txt";
+const FTP_ENABLED = !!process.env.FS25_FTP_HOST;
+const FTP_LOG_DIR = process.env.FS25_FTP_LOG_DIR || "/";
 
 const farmWebhooks = {
   "farma 1": process.env.FS25_WEBHOOK_FARMA_1,
@@ -43,6 +45,7 @@ const farmWebhooks = {
 
 let filePosition = 0;
 let partialLine = "";
+let currentSourceId = null;
 let lastMissingLogWarningAt = 0;
 
 function logInfo(message) {
@@ -112,8 +115,8 @@ async function handleLine(line) {
   }
 }
 
-async function processChunk(chunk) {
-  const combined = partialLine + chunk.toString("utf8");
+async function processTextChunk(text) {
+  const combined = partialLine + text;
   const lines = combined.split(/\r?\n/);
   partialLine = lines.pop() || "";
 
@@ -125,31 +128,40 @@ async function processChunk(chunk) {
   }
 }
 
-async function readNewContent() {
+async function readLocalContent() {
   let stats;
 
   try {
-    stats = fs.statSync(LOG_PATH);
+    stats = fs.statSync(LOCAL_LOG_PATH);
   } catch (error) {
     const now = Date.now();
     if (now - lastMissingLogWarningAt >= 10000) {
-      logInfo(`Log file not accessible yet: ${LOG_PATH}`);
+      logInfo(`Log file not accessible yet: ${LOCAL_LOG_PATH}`);
       lastMissingLogWarningAt = now;
     }
+    return;
+  }
+
+  const sourceId = `local:${LOCAL_LOG_PATH}`;
+  if (currentSourceId !== sourceId) {
+    currentSourceId = sourceId;
+    filePosition = stats.size;
+    partialLine = "";
+    logInfo(`Watching local log ${LOCAL_LOG_PATH}`);
     return;
   }
 
   if (stats.size < filePosition) {
     filePosition = 0;
     partialLine = "";
-    logInfo("Log file was rotated or truncated, resetting reader position");
+    logInfo("Local log file was rotated or truncated, resetting reader position");
   }
 
   if (stats.size === filePosition) {
     return;
   }
 
-  const stream = fs.createReadStream(LOG_PATH, {
+  const stream = fs.createReadStream(LOCAL_LOG_PATH, {
     start: filePosition,
     end: stats.size - 1,
   });
@@ -162,7 +174,106 @@ async function readNewContent() {
   filePosition = stats.size;
 
   if (chunks.length > 0) {
-    await processChunk(Buffer.concat(chunks));
+    await processTextChunk(Buffer.concat(chunks).toString("utf8"));
+  }
+}
+
+async function getFtpClient() {
+  const ftp = await import("basic-ftp");
+  const client = new ftp.Client();
+  client.ftp.verbose = false;
+
+  await client.access({
+    host: process.env.FS25_FTP_HOST,
+    port: Number(process.env.FS25_FTP_PORT || 21),
+    user: process.env.FS25_FTP_USER,
+    password: process.env.FS25_FTP_PASSWORD,
+    secure: false,
+  });
+
+  return client;
+}
+
+function pickLatestLogFile(entries) {
+  return entries
+    .filter((entry) => entry.isFile && /^log_.*\.txt$/i.test(entry.name))
+    .sort((a, b) => {
+      const aTime = a.modifiedAt instanceof Date ? a.modifiedAt.getTime() : 0;
+      const bTime = b.modifiedAt instanceof Date ? b.modifiedAt.getTime() : 0;
+      if (aTime !== bTime) {
+        return bTime - aTime;
+      }
+
+      return b.name.localeCompare(a.name);
+    })[0] || null;
+}
+
+function toFtpPath(dir, fileName) {
+  const cleanDir = dir.endsWith("/") ? dir.slice(0, -1) : dir;
+  if (cleanDir === "") {
+    return `/${fileName}`;
+  }
+
+  return `${cleanDir}/${fileName}`;
+}
+
+async function readFtpContent() {
+  let client;
+
+  try {
+    client = await getFtpClient();
+    const entries = await client.list(FTP_LOG_DIR);
+    const latestLog = pickLatestLogFile(entries);
+
+    if (latestLog == null) {
+      logInfo(`No log_*.txt file found in FTP dir ${FTP_LOG_DIR}`);
+      return;
+    }
+
+    const remotePath = toFtpPath(FTP_LOG_DIR, latestLog.name);
+    const sourceId = `ftp:${remotePath}`;
+
+    if (currentSourceId !== sourceId) {
+      currentSourceId = sourceId;
+      filePosition = latestLog.size;
+      partialLine = "";
+      logInfo(`Watching FTP log ${remotePath}`);
+      return;
+    }
+
+    if (latestLog.size < filePosition) {
+      filePosition = 0;
+      partialLine = "";
+      logInfo("FTP log was rotated or truncated, resetting reader position");
+    }
+
+    if (latestLog.size === filePosition) {
+      return;
+    }
+
+    const chunks = [];
+    await client.downloadTo(
+      {
+        write(chunk) {
+          chunks.push(Buffer.from(chunk));
+        },
+        end() {},
+      },
+      remotePath,
+      filePosition
+    );
+
+    filePosition = latestLog.size;
+
+    if (chunks.length > 0) {
+      await processTextChunk(Buffer.concat(chunks).toString("utf8"));
+    }
+  } catch (error) {
+    logInfo(`FTP read failed: ${error.message}`);
+  } finally {
+    if (client != null) {
+      client.close();
+    }
   }
 }
 
@@ -177,26 +288,42 @@ function validateConfig() {
     missing.push("FS25_WEBHOOK_FARMA_2");
   }
 
+  if (FTP_ENABLED) {
+    if (!process.env.FS25_FTP_HOST) missing.push("FS25_FTP_HOST");
+    if (!process.env.FS25_FTP_PORT) missing.push("FS25_FTP_PORT");
+    if (!process.env.FS25_FTP_USER) missing.push("FS25_FTP_USER");
+    if (!process.env.FS25_FTP_PASSWORD) missing.push("FS25_FTP_PASSWORD");
+  }
+
   if (missing.length > 0) {
     throw new Error(`Missing required config: ${missing.join(", ")}`);
   }
 }
 
+async function pollOnce() {
+  if (FTP_ENABLED) {
+    await readFtpContent();
+    return;
+  }
+
+  await readLocalContent();
+}
+
 async function main() {
   validateConfig();
 
-  try {
-    const stats = fs.statSync(LOG_PATH);
-    filePosition = stats.size;
-  } catch (error) {
-    filePosition = 0;
+  if (FTP_ENABLED) {
+    logInfo(`Starting in FTP mode (${process.env.FS25_FTP_HOST}:${process.env.FS25_FTP_PORT}, dir ${FTP_LOG_DIR})`);
+  } else {
+    logInfo(`Starting in local file mode (${LOCAL_LOG_PATH})`);
   }
 
-  logInfo(`Watching ${LOG_PATH}`);
-  logInfo("Bridge starts from end of file and sends only new purchase lines");
+  logInfo("Bridge starts from end of the active log and sends only new purchase lines");
+
+  await pollOnce();
 
   setInterval(() => {
-    readNewContent().catch((error) => {
+    pollOnce().catch((error) => {
       logInfo(`Watcher error: ${error.message}`);
     });
   }, POLL_MS);
