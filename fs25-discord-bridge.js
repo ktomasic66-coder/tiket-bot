@@ -224,26 +224,56 @@ function toFtpPath(dir, fileName) {
   return `${cleanDir}/${fileName}`;
 }
 
+async function resolveFtpLogDir(client) {
+  const rootEntries = await client.list(FTP_LOG_DIR);
+  const rootHasLogs = pickLatestLogFile(rootEntries) != null;
+
+  if (rootHasLogs || FTP_LOG_DIR !== "/") {
+    return {
+      logDir: FTP_LOG_DIR,
+      entries: rootEntries,
+    };
+  }
+
+  const profileDir = "/profile";
+  const hasProfileDir = rootEntries.some((entry) => String(entry.name || "").toLowerCase() === "profile");
+
+  if (!hasProfileDir) {
+    return {
+      logDir: FTP_LOG_DIR,
+      entries: rootEntries,
+    };
+  }
+
+  const profileEntries = await client.list(profileDir);
+  logInfo(`FTP auto-switched log dir from / to ${profileDir}`);
+
+  return {
+    logDir: profileDir,
+    entries: profileEntries,
+  };
+}
+
 async function readFtpContent() {
   let client;
 
   try {
     client = await getFtpClient();
-    const entries = await client.list(FTP_LOG_DIR);
+    const { logDir, entries } = await resolveFtpLogDir(client);
     const latestLog = pickLatestLogFile(entries);
 
     if (latestLog == null) {
       const now = Date.now();
       if (now - lastFtpListingDebugAt >= 30000) {
         const visibleNames = entries.map((entry) => entry.name).filter(Boolean);
-        logInfo(`FTP dir ${FTP_LOG_DIR} visible entries: ${visibleNames.join(", ") || "(empty)"}`);
+        logInfo(`FTP dir ${logDir} visible entries: ${visibleNames.join(", ") || "(empty)"}`);
         lastFtpListingDebugAt = now;
       }
-      logInfo(`No log_*.txt file found in FTP dir ${FTP_LOG_DIR}`);
+      logInfo(`No log_*.txt file found in FTP dir ${logDir}`);
       return;
     }
 
-    const remotePath = toFtpPath(FTP_LOG_DIR, latestLog.name);
+    const remotePath = toFtpPath(logDir, latestLog.name);
     const sourceId = `ftp:${remotePath}`;
 
     if (currentSourceId !== sourceId) {
