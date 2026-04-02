@@ -30,6 +30,7 @@ const {
 } = require('discord.js');
 
 const commands = require('./commands');
+const { startFs25Bridge } = require('./fs25-discord-bridge');
 const {
   postPollPanel,
   handlePollButton,
@@ -37,6 +38,10 @@ const {
   initPollStorage,
   restoreActivePolls,
 } = require('./utils/pollSystem');
+
+startFs25Bridge().catch((error) => {
+  console.error('[fs25-bridge] Startup failed inside bot:', error);
+});
 
 function isUnknownInteractionError(error) {
   return error?.code === 10062;

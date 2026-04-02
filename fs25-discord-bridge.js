@@ -47,6 +47,7 @@ let filePosition = 0;
 let partialLine = "";
 let currentSourceId = null;
 let lastMissingLogWarningAt = 0;
+let bridgeStarted = false;
 
 function logInfo(message) {
   console.log(`[fs25-bridge] ${message}`);
@@ -309,7 +310,13 @@ async function pollOnce() {
   await readLocalContent();
 }
 
-async function main() {
+async function startFs25Bridge() {
+  if (bridgeStarted) {
+    logInfo("Bridge already started, skipping duplicate start");
+    return;
+  }
+
+  bridgeStarted = true;
   validateConfig();
 
   if (FTP_ENABLED) {
@@ -329,7 +336,13 @@ async function main() {
   }, POLL_MS);
 }
 
-main().catch((error) => {
-  console.error(`[fs25-bridge] Startup failed: ${error.message}`);
-  process.exit(1);
-});
+module.exports = {
+  startFs25Bridge,
+};
+
+if (require.main === module) {
+  startFs25Bridge().catch((error) => {
+    console.error(`[fs25-bridge] Startup failed: ${error.message}`);
+    process.exit(1);
+  });
+}
