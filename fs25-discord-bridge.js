@@ -47,6 +47,7 @@ let filePosition = 0;
 let partialLine = "";
 let currentSourceId = null;
 let lastMissingLogWarningAt = 0;
+let lastFtpListingDebugAt = 0;
 let bridgeStarted = false;
 
 function logInfo(message) {
@@ -196,8 +197,13 @@ async function getFtpClient() {
 }
 
 function pickLatestLogFile(entries) {
-  return entries
-    .filter((entry) => entry.isFile && /^log_.*\.txt$/i.test(entry.name))
+  const matchingEntries = entries.filter((entry) => /^log_.*\.txt$/i.test(entry.name || ""));
+
+  if (matchingEntries.length === 0) {
+    return null;
+  }
+
+  return matchingEntries
     .sort((a, b) => {
       const aTime = a.modifiedAt instanceof Date ? a.modifiedAt.getTime() : 0;
       const bTime = b.modifiedAt instanceof Date ? b.modifiedAt.getTime() : 0;
@@ -205,7 +211,7 @@ function pickLatestLogFile(entries) {
         return bTime - aTime;
       }
 
-      return b.name.localeCompare(a.name);
+      return String(b.name || "").localeCompare(String(a.name || ""));
     })[0] || null;
 }
 
@@ -227,6 +233,12 @@ async function readFtpContent() {
     const latestLog = pickLatestLogFile(entries);
 
     if (latestLog == null) {
+      const now = Date.now();
+      if (now - lastFtpListingDebugAt >= 30000) {
+        const visibleNames = entries.map((entry) => entry.name).filter(Boolean);
+        logInfo(`FTP dir ${FTP_LOG_DIR} visible entries: ${visibleNames.join(", ") || "(empty)"}`);
+        lastFtpListingDebugAt = now;
+      }
       logInfo(`No log_*.txt file found in FTP dir ${FTP_LOG_DIR}`);
       return;
     }
