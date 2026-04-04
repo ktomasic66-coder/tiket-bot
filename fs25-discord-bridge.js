@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { PassThrough } = require("stream");
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -295,16 +296,13 @@ async function readFtpContent() {
     }
 
     const chunks = [];
-    await client.downloadTo(
-      {
-        write(chunk) {
-          chunks.push(Buffer.from(chunk));
-        },
-        end() {},
-      },
-      remotePath,
-      filePosition
-    );
+    const destination = new PassThrough();
+
+    destination.on("data", (chunk) => {
+      chunks.push(Buffer.from(chunk));
+    });
+
+    await client.downloadTo(destination, remotePath, filePosition);
 
     filePosition = latestLog.size;
 
