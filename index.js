@@ -439,6 +439,7 @@ async function persistDbCache() {
         ticketSubmissions: payload.ticketSubmissions,
         ticketRecords: payload.ticketRecords,
         farmingTasks: payload.farmingTasks,
+        farmingTaskPanelMessageIds: payload.farmingTaskPanelMessageIds,
         farmingFields: payload.farmingFields,
         farmingFieldListMessageId: payload.farmingFieldListMessageId,
         sowingSeasons: payload.sowingSeasons,
