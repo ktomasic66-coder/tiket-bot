@@ -835,6 +835,27 @@ function getAllFarmingFields() {
   return normalizeFarmingFields(data.farmingFields);
 }
 
+function buildTaskFieldSelectionRows(fields, farmKey) {
+  const rows = [];
+
+  for (let i = 0; i < fields.length && rows.length < 5; i += 25) {
+    const slice = fields.slice(i, i + 25);
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(`task_field_select_${farmKey}_${rows.length + 1}`)
+      .setPlaceholder(`Odaberi polje (${i + 1}-${i + slice.length})`)
+      .addOptions(
+        slice.map((field) => ({
+          label: `Polje ${field}`,
+          value: String(field),
+        }))
+      );
+
+    rows.push(new ActionRowBuilder().addComponents(menu));
+  }
+
+  return rows;
+}
+
 // helper: spremi polja u db.json
 function saveFarmingFields(farmKey, fields) {
   const data = loadDb();
@@ -3544,6 +3565,84 @@ if (interaction.commandName === 'update-field') {
     });
   }
 
+  if (
+    interaction.isStringSelectMenu() &&
+    interaction.customId.startsWith('task_field_select_')
+  ) {
+    const fieldId = interaction.values[0];
+    const current = activeTasks.get(interaction.user.id) || {};
+    const farm = getFarmConfig(current.farmKey || 'farm1');
+    current.field = fieldId;
+    activeTasks.set(interaction.user.id, current);
+
+    const embed = new EmbedBuilder()
+      .setColor('#00a84d')
+      .setTitle('ðŸšœ Kreiranje zadatka â€“ Korak 2')
+      .setDescription(
+        `${farm.label}\nOdabrano polje: **Polje ${fieldId}**\n\nSada odaberi vrstu posla:`
+      );
+
+    const jobsRow1 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('task_job_oranje')
+        .setLabel('Oranje')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_lajn')
+        .setLabel('Bacanje lajma')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_djubrenje')
+        .setLabel('Äubrenje')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_tanjiranje')
+        .setLabel('Tanjiranje')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_kultivacija')
+        .setLabel('Kultivacija')
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    const jobsRow2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('task_job_sjetva')
+        .setLabel('Sjetva')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('task_job_prskanje')
+        .setLabel('Prskanje')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_zetva')
+        .setLabel('Å½etva')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('task_job_baliranje')
+        .setLabel('Baliranje')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('task_job_rolanje')
+        .setLabel('Rolanje')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    const jobsRow3 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('task_job_spajanje')
+        .setLabel('Spajanje')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await interaction.reply({
+      embeds: [embed],
+      components: [jobsRow1, jobsRow2, jobsRow3],
+      ephemeral: true,
+    });
+    return;
+  }
+
   // ---------- BUTTONI (TICKETI + FARMING) ----------
   if (interaction.isButton()) {
     if (await handlePollButton(interaction, client)) {
@@ -3726,24 +3825,7 @@ if (interaction.customId === 'task_start_farm1' || interaction.customId === 'tas
   activeTasks.set(interaction.user.id, { field: null, farmKey: farm.key });
 
   const FIELDS = getFarmingFields(farm.key);
-  const perRow = 5;
-  const rows = [];
-
-  for (let i = 0; i < FIELDS.length; i += perRow) {
-    const row = new ActionRowBuilder();
-    const slice = FIELDS.slice(i, i + perRow);
-
-    for (const field of slice) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`task_field_${field}`)
-          .setLabel(`Polje ${field}`)
-          .setStyle(ButtonStyle.Secondary)
-      );
-    }
-
-    rows.push(row);
-  }
+  const rows = buildTaskFieldSelectionRows(FIELDS, farm.key);
 
   const embed = new EmbedBuilder()
     .setColor('#ffd900')
