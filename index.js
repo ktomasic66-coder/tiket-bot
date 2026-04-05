@@ -225,6 +225,10 @@ function getDefaultData() {
     ticketSystem: JSON.parse(JSON.stringify(DEFAULT_TICKET_SYSTEM)),
     // 🔹 ovdje ćemo spremati aktivne/završene FS zadatke (da ih možemo naći po polju)
     farmingTasks: [],
+    farmingTaskPanelMessageIds: {
+      farm1: null,
+      farm2: null,
+    },
     farmingFields: {
       farm1: [...DEFAULT_FARMING_FIELDS],
       farm2: [],
@@ -286,6 +290,10 @@ function mergeDbData(raw) {
       },
     },
     farmingTasks: Array.isArray(data.farmingTasks) ? data.farmingTasks : base.farmingTasks,
+    farmingTaskPanelMessageIds: {
+      ...base.farmingTaskPanelMessageIds,
+      ...(data.farmingTaskPanelMessageIds || {}),
+    },
     farmingFields: normalizeFarmingFields(data.farmingFields),
     farmingFieldListMessageId:
       typeof data.farmingFieldListMessageId === 'string' || data.farmingFieldListMessageId === null
@@ -329,6 +337,10 @@ function mergeRemoteSharedConfigIntoCache(remoteData) {
     ticketSubmissions: Array.isArray(dbCache.ticketSubmissions) ? dbCache.ticketSubmissions : [],
     ticketRecords: Array.isArray(dbCache.ticketRecords) ? dbCache.ticketRecords : [],
     farmingTasks: Array.isArray(mergedRemote.farmingTasks) ? mergedRemote.farmingTasks : [],
+    farmingTaskPanelMessageIds: {
+      ...getDefaultData().farmingTaskPanelMessageIds,
+      ...(mergedRemote.farmingTaskPanelMessageIds || {}),
+    },
     farmingFields: normalizeFarmingFields(mergedRemote.farmingFields),
     farmingFieldListMessageId:
       typeof mergedRemote.farmingFieldListMessageId === 'string' ||
@@ -1773,9 +1785,12 @@ function saveFarmingTask(record) {
   const data = loadDb();
   if (!Array.isArray(data.farmingTasks)) data.farmingTasks = [];
 
+  const taskId = record.taskId || record.messageId || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  record.taskId = taskId;
+
   // ako već postoji isti messageId → update
   const idx = data.farmingTasks.findIndex(
-    (t) => t.messageId === record.messageId
+    (t) => (record.taskId && t.taskId === record.taskId) || (record.messageId && t.messageId === record.messageId)
   );
 
   if (idx !== -1) {
@@ -1802,6 +1817,123 @@ function findOpenTaskByField(field, farmKey = null) {
   return null;
 }
 
+function getOpenFieldTasks(farmKey) {
+  const data = loadDb();
+  const tasks = Array.isArray(data.farmingTasks) ? data.farmingTasks : [];
+  return tasks.filter(
+    (task) =>
+      task.status === 'open' &&
+      task.field &&
+      resolveFarmConfig(task).key === farmKey
+  );
+}
+
+function formatTaskPanelTimestamp(date = new Date()) {
+  return new Intl.DateTimeFormat('hr-HR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function buildFieldTaskLine(task, index) {
+  const base = `Polje ${task.field} - ${task.jobName || 'Posao'}`;
+  const extra =
+    task.jobKey === 'sijanje' && task.cropName
+      ? ` ${task.cropName}`
+      : task.jobKey === 'kombajniranje' && task.harvestInfo
+        ? ` ${task.harvestInfo}`
+        : '';
+
+  return `${index + 1}. ${base}${extra}`;
+}
+
+function buildFarmingTaskPanelEmbed(farm, tasks) {
+  const description = tasks.length
+    ? tasks.map((task, index) => buildFieldTaskLine(task, index)).join('\n\n')
+    : '_Trenutno nema aktivnih radova._';
+
+  return new EmbedBuilder()
+    .setColor('#ffd900')
+    .setTitle(`🚜 Aktivni poslovi - ${farm.label}`)
+    .setDescription(description)
+    .addFields(
+      { name: 'Ukupno aktivnih radova', value: String(tasks.length), inline: true },
+      { name: 'Zadnje osvježenje', value: formatTaskPanelTimestamp(), inline: true }
+    );
+}
+
+function buildFarmingTaskPanelRows(hasTasks = false) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('task_finish_open')
+        .setLabel('Završi zadatak')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(!hasTasks)
+    ),
+  ];
+}
+
+function buildActiveTaskSelectRows(tasks, farmKey) {
+  const rows = [];
+
+  for (let i = 0; i < tasks.length && rows.length < 5; i += 25) {
+    const slice = tasks.slice(i, i + 25);
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(`task_finish_select_${farmKey}_${rows.length + 1}`)
+      .setPlaceholder(`Odaberi aktivni posao (${i + 1}-${i + slice.length})`)
+      .addOptions(
+        slice.map((task, index) => ({
+          label: buildFieldTaskLine(task, i + index).slice(0, 100),
+          value: String(task.taskId || task.messageId),
+        }))
+      );
+
+    rows.push(new ActionRowBuilder().addComponents(menu));
+  }
+
+  return rows;
+}
+
+async function updateFarmingTaskPanel(guild, farmKey) {
+  if (!guild) return null;
+
+  const farm = getFarmConfig(farmKey);
+  const channel = await guild.channels.fetch(farm.jobChannelId).catch(() => null);
+  if (!channel) return null;
+
+  const data = loadDb();
+  const panelIds = {
+    farm1: null,
+    farm2: null,
+    ...(data.farmingTaskPanelMessageIds || {}),
+  };
+  const tasks = getOpenFieldTasks(farm.key)
+    .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+  const embed = buildFarmingTaskPanelEmbed(farm, tasks);
+  const components = buildFarmingTaskPanelRows(tasks.length > 0);
+
+  let message = null;
+  if (panelIds[farm.key]) {
+    message = await channel.messages.fetch(panelIds[farm.key]).catch(() => null);
+  }
+
+  if (message) {
+    await message.edit({ embeds: [embed], components });
+    return message;
+  }
+
+  message = await channel.send({ embeds: [embed], components });
+  panelIds[farm.key] = message.id;
+  data.farmingTaskPanelMessageIds = panelIds;
+  saveDb(data);
+  return message;
+}
+
 // označi zadatak kao završen + prebaci embed u "završene poslove"
 // ili kreiraj novi završen zadatak ako ne postoji
 async function finishTaskFromFsUpdate(field, payload) {
@@ -1820,6 +1952,49 @@ async function finishTaskFromFsUpdate(field, payload) {
   const doneChannel = await client.channels.fetch(farm.doneChannelId).catch(() => null);
 
   if (!doneChannel) return false;
+
+  if (task && !task.messageId) {
+    const finishedEmbed = new EmbedBuilder()
+      .setColor('#ff0000')
+      .setTitle('✅ Zadatak završen (FS)')
+      .addFields(
+        { name: 'Farma', value: farm.label, inline: true },
+        { name: 'Polje', value: `Polje ${task.field}`, inline: true },
+        { name: 'Posao', value: task.jobName || jobFromFs || 'Posao', inline: true },
+        { name: 'Završio', value: finishedBy, inline: true }
+      )
+      .setTimestamp();
+
+    if (task.jobKey === 'sijanje' && task.cropName) {
+      finishedEmbed.addFields({ name: 'Kultura', value: task.cropName, inline: true });
+    }
+
+    if (task.jobKey === 'kombajniranje' && task.harvestInfo) {
+      finishedEmbed.addFields({ name: 'Detalji', value: task.harvestInfo, inline: true });
+    }
+
+    await doneChannel.send({ embeds: [finishedEmbed] });
+
+    const data = loadDb();
+    if (!Array.isArray(data.farmingTasks)) data.farmingTasks = [];
+    const idx = data.farmingTasks.findIndex(
+      (entry) =>
+        (task.taskId && entry.taskId === task.taskId) ||
+        (task.messageId && entry.messageId === task.messageId)
+    );
+    if (idx !== -1) {
+      data.farmingTasks[idx].status = 'done';
+      data.farmingTasks[idx].finishedBy = finishedBy;
+      data.farmingTasks[idx].finishedAt = new Date().toISOString();
+      data.farmingTasks[idx].channelId = doneChannel.id;
+      data.farmingTasks[idx].farmKey = farm.key;
+      data.farmingTasks[idx].farmLabel = farm.label;
+      saveDb(data);
+    }
+
+    await updateFarmingTaskPanel(guild, farm.key).catch(() => null);
+    return true;
+  }
 
   // ako nema spremljenog zadatka za ovo polje
   if (!task || !jobChannel) {
@@ -1891,6 +2066,8 @@ async function finishTaskFromFsUpdate(field, payload) {
     data.farmingTasks[idx].farmKey = resolveFarmConfig(data.farmingTasks[idx]).key;
     saveDb(data);
   }
+
+  await updateFarmingTaskPanel(guild, farm.key).catch(() => null);
 
   console.log(
     `✅ FS: Zadatak za polje ${field} automatski označen kao završen.`
@@ -2198,6 +2375,8 @@ client.once('ready', async () => {
     if (guild) {
       await updateSeasonEmbed(guild);
       await updateFarmingFieldsEmbed(guild);
+      await updateFarmingTaskPanel(guild, 'farm1');
+      await updateFarmingTaskPanel(guild, 'farm2');
       console.log("🌾 Sezona Sjetve — embed obnovljen pri startu bota.");
     }
   } catch (err) {
@@ -3575,6 +3754,110 @@ if (interaction.commandName === 'update-field') {
     current.field = fieldId;
     activeTasks.set(interaction.user.id, current);
 
+    const nextEmbed = new EmbedBuilder()
+      .setColor('#00a84d')
+      .setTitle('🚜 Kreiranje zadatka – Korak 2')
+      .setDescription(
+        `${farm.label}\nOdabrano polje: **Polje ${fieldId}**\n\nSada odaberi vrstu posla:`
+      );
+
+    const nextJobsRow1 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('task_job_oranje')
+        .setLabel('Oranje')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_lajn')
+        .setLabel('Bacanje lajma')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_djubrenje')
+        .setLabel('Đubrenje')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_tanjiranje')
+        .setLabel('Kultiviranje')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_podrivanje')
+        .setLabel('Podrivanje')
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    const nextJobsRow2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('task_job_herbicid')
+        .setLabel('Herbicid')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_kosnja_trave')
+        .setLabel('Košnja trave')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_kosnja_djeteline')
+        .setLabel('Košnja djeteline')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_kombajniranje_modal')
+        .setLabel('Kombajniranje')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('task_job_sijanje')
+        .setLabel('Sijanje')
+        .setStyle(ButtonStyle.Success)
+    );
+
+    const nextJobsRow3 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('task_job_malciranje')
+        .setLabel('Malčiranje')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_spajanje')
+        .setLabel('Spajanje polja')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_baliranje')
+        .setLabel('Baliranje')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_skupljanje')
+        .setLabel('Skupljanje u redove')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_okretanje')
+        .setLabel('Prevrtanje trave / djeteline')
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    const nextJobsRow4 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('task_job_zamotavanje')
+        .setLabel('Zamotati bale za silažu')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_zimska')
+        .setLabel('Zimska brazda')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_ceste')
+        .setLabel('Čišćenje ceste')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_rolanje')
+        .setLabel('Rolanje polja')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('task_job_silaza')
+        .setLabel('Silaža')
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    return interaction.update({
+      embeds: [nextEmbed],
+      components: [nextJobsRow1, nextJobsRow2, nextJobsRow3, nextJobsRow4],
+    });
+
     const embed = new EmbedBuilder()
       .setColor('#00a84d')
       .setTitle('ðŸšœ Kreiranje zadatka â€“ Korak 2')
@@ -3643,10 +3926,110 @@ if (interaction.commandName === 'update-field') {
     return;
   }
 
+  if (
+    interaction.isStringSelectMenu() &&
+    interaction.customId.startsWith('task_finish_select_')
+  ) {
+    const selectedTaskId = interaction.values[0];
+    const db = loadDb();
+    const task = Array.isArray(db.farmingTasks)
+      ? db.farmingTasks.find(
+          (entry) =>
+            entry.status === 'open' &&
+            ((entry.taskId && entry.taskId === selectedTaskId) ||
+              (entry.messageId && entry.messageId === selectedTaskId))
+        )
+      : null;
+
+    if (!task) {
+      return interaction.reply({
+        content: '⚠️ Odabrani posao više nije aktivan.',
+        ephemeral: true,
+      });
+    }
+
+    const farm = resolveFarmConfig(task);
+    const doneChannel = await interaction.guild.channels.fetch(farm.doneChannelId).catch(() => null);
+    if (!doneChannel) {
+      return interaction.reply({
+        content: '⚠️ Kanal za završene poslove nije pronađen.',
+        ephemeral: true,
+      });
+    }
+
+    const finishedEmbed = new EmbedBuilder()
+      .setColor('#ff0000')
+      .setTitle('✅ Zadatak završen')
+      .addFields(
+        { name: 'Farma', value: farm.label, inline: true },
+        { name: 'Polje', value: `Polje ${task.field}`, inline: true },
+        { name: 'Posao', value: task.jobName || 'Posao', inline: true },
+        { name: 'Završio', value: interaction.user.tag, inline: true }
+      )
+      .setTimestamp();
+
+    if (task.jobKey === 'sijanje' && task.cropName) {
+      finishedEmbed.addFields({ name: 'Kultura', value: task.cropName, inline: true });
+    }
+
+    if (task.jobKey === 'kombajniranje' && task.harvestInfo) {
+      finishedEmbed.addFields({ name: 'Detalji', value: task.harvestInfo, inline: true });
+    }
+
+    await doneChannel.send({ embeds: [finishedEmbed] });
+
+    task.status = 'done';
+    task.channelId = doneChannel.id;
+    task.farmKey = farm.key;
+    task.farmLabel = farm.label;
+    task.finishedBy = interaction.user.tag;
+    task.finishedAt = new Date().toISOString();
+    saveDb(db);
+
+    if (task.messageId) {
+      const jobChannel = await interaction.guild.channels.fetch(farm.jobChannelId).catch(() => null);
+      const oldMsg = jobChannel
+        ? await jobChannel.messages.fetch(task.messageId).catch(() => null)
+        : null;
+      if (oldMsg && oldMsg.id !== (db.farmingTaskPanelMessageIds || {})[farm.key]) {
+        await oldMsg.delete().catch(() => {});
+      }
+    }
+
+    await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
+
+    return interaction.update({
+      content: `✅ Završeno: ${buildFieldTaskLine(task, 0).replace(/^1\.\s*/, '')}`,
+      embeds: [],
+      components: [],
+    });
+  }
+
   // ---------- BUTTONI (TICKETI + FARMING) ----------
   if (interaction.isButton()) {
     if (await handlePollButton(interaction, client)) {
       return;
+    }
+
+    if (interaction.customId === 'task_finish_open') {
+      const farm = getFarmConfig(
+        Object.values(FARM_CONFIGS).find((entry) => entry.jobChannelId === interaction.channelId)?.key || 'farm1'
+      );
+      const tasks = getOpenFieldTasks(farm.key)
+        .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+
+      if (!tasks.length) {
+        return interaction.reply({
+          content: '⚠️ Trenutno nema aktivnih poslova za završiti.',
+          ephemeral: true,
+        });
+      }
+
+      return interaction.reply({
+        content: `Odaberi aktivni posao za ${farm.label}:`,
+        components: buildActiveTaskSelectRows(tasks, farm.key),
+        ephemeral: true,
+      });
     }
 
     if (interaction.customId.startsWith('ticket_modal_continue:')) {
@@ -4179,16 +4562,11 @@ if (interaction.customId.startsWith('task_priority_')) {
       .setStyle(ButtonStyle.Success)
   );
 
-  const jobChannel = await interaction.guild.channels.fetch(farm.jobChannelId);
-  const sentMsg = await jobChannel.send({
-    embeds: [embed],
-    components: [row],
-  });
-
   saveFarmingTask({
     farmKey: farm.key,
     farmLabel: farm.label,
     field: current.field,
+    taskId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
     jobKey: current.jobKey,
     jobName: current.jobName,
     priority: key,
@@ -4196,11 +4574,12 @@ if (interaction.customId.startsWith('task_priority_')) {
     priorityValue: prio.value,
     status: 'open',
     fromFs: false,
-    channelId: jobChannel.id,
-    messageId: sentMsg.id,
+    channelId: farm.jobChannelId,
     createdBy: interaction.user.id,
     createdAt: new Date().toISOString(),
   });
+
+  await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
 
   activeTasks.delete(interaction.user.id);
 
@@ -4334,6 +4713,8 @@ if (!task.cropName) {
     task.finishedAt = new Date().toISOString();
     saveDb(db);
   }
+
+  await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
 
   await interaction.reply({
     content:
@@ -4785,7 +5166,6 @@ if (
           .setStyle(ButtonStyle.Success)
       );
 
-      const jobChannel = await interaction.guild.channels.fetch(farm.jobChannelId);
 
       await interaction.reply({
         content:
@@ -4793,12 +5173,9 @@ if (
         ephemeral: true,
       });
 
-      const sentMsg = await jobChannel.send({
-        embeds: [embed],
-        components: [doneRow],
-      });
 
       saveFarmingTask({
+        taskId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
         farmKey: farm.key,
         farmLabel: farm.label,
         field: current.field,
@@ -4807,11 +5184,12 @@ if (
         cropName: seedName,
         status: 'open',
         fromFs: false,
-        channelId: jobChannel.id,
-        messageId: sentMsg.id,
+        channelId: farm.jobChannelId,
         createdBy: interaction.user.id,
         createdAt: new Date().toISOString(),
       });
+
+      await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
 
       activeTasks.delete(interaction.user.id);
       return;
@@ -4903,6 +5281,7 @@ if (
     }
 
     await updateTaskEmbeds();
+    await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
 
 
     // === 5) Update Sowing Season (mora promijeniti ključ)
@@ -4966,7 +5345,6 @@ if (
           .setStyle(ButtonStyle.Success)
       );
 
-      const jobChannel = await interaction.guild.channels.fetch(farm.jobChannelId);
 
       await interaction.reply({
         content:
@@ -4974,12 +5352,9 @@ if (
         ephemeral: true,
       });
 
-      const sentMsg = await jobChannel.send({
-        embeds: [embed],
-        components: [doneRow],
-      });
 
       saveFarmingTask({
+        taskId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
         farmKey: farm.key,
         farmLabel: farm.label,
         field: current.field,
@@ -4987,11 +5362,13 @@ if (
         jobName: 'Kombajniranje',
         status: 'open',
         fromFs: false,
-        channelId: jobChannel.id,
-        messageId: sentMsg.id,
+        channelId: farm.jobChannelId,
+        harvestInfo,
         createdBy: interaction.user.id,
         createdAt: new Date().toISOString(),
       });
+
+      await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
 
       activeTasks.delete(interaction.user.id);
       return;
