@@ -1831,6 +1831,7 @@ function getOpenFieldTasks(farmKey) {
 
 function formatTaskPanelTimestamp(date = new Date()) {
   return new Intl.DateTimeFormat('hr-HR', {
+    timeZone: 'Europe/Zagreb',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
