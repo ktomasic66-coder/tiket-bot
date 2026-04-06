@@ -4573,10 +4573,15 @@ if (interaction.customId.startsWith('task_priority_')) {
 
     activeTasks.delete(interaction.user.id);
 
-    return interaction.reply({
+    await interaction.update({
       content: '✅ Opći zadatak je kreiran.',
-      ephemeral: true,
+      embeds: [],
+      components: [],
     });
+    setTimeout(() => {
+      interaction.deleteReply().catch(() => {});
+    }, 1500);
+    return;
   }
 
   // ==============================
@@ -4628,10 +4633,15 @@ if (interaction.customId.startsWith('task_priority_')) {
 
   activeTasks.delete(interaction.user.id);
 
-  return interaction.reply({
+  await interaction.update({
     content: '✅ Farming zadatak je uspješno kreiran.',
-    ephemeral: true,
+    embeds: [],
+    components: [],
   });
+  setTimeout(() => {
+    interaction.deleteReply().catch(() => {});
+  }, 1500);
+  return;
 }
 
 
