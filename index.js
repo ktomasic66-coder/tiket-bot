@@ -1861,7 +1861,7 @@ function buildFieldTaskLine(task, index) {
   };
   const priority = priorityDots[normalizedPriority] || '';
 
-  return `${index + 1}. ${base}${extra}${priority}`;
+  return `• ${base}${extra}${priority}`;
 }
 
 function buildFarmingTaskPanelEmbed(farm, tasks) {
