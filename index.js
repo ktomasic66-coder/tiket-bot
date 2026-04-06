@@ -2385,6 +2385,7 @@ client.once('ready', async () => {
   try {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (guild) {
+      await refreshSharedBotConfigFromMySql(true);
       await updateSeasonEmbed(guild);
       await updateFarmingFieldsEmbed(guild);
       await updateFarmingTaskPanel(guild, 'farm1');
@@ -3278,6 +3279,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.commandName === 'task1' || interaction.commandName === 'task2') {
       const farmKey = interaction.commandName === 'task2' ? 'farm2' : 'farm1';
       await interaction.deferReply({ ephemeral: true });
+      await refreshSharedBotConfigFromMySql(true);
       await updateFarmingTaskPanel(interaction.guild, farmKey);
       await interaction.editReply({
         content: `✅ Panel za ${getFarmConfig(farmKey).label} je osvježen.`,
