@@ -1854,27 +1854,37 @@ function buildFieldTaskLine(task, index) {
 }
 
 function buildFarmingTaskPanelEmbed(farm, tasks) {
-  const description = tasks.length
-    ? tasks.map((task, index) => buildFieldTaskLine(task, index)).join('\n\n')
-    : '_Trenutno nema aktivnih radova._';
+  const lines = tasks.length
+    ? tasks.map((task, index) => buildFieldTaskLine(task, index))
+    : ['_Trenutno nema aktivnih radova._'];
 
   return new EmbedBuilder()
     .setColor('#ffd900')
-    .setTitle(`🚜 Aktivni poslovi - ${farm.label}`)
-    .setDescription(description)
+    .setTitle(`🚜 ${farm.label} - Zadaci`)
+    .setDescription(
+      `Odaberi što želiš kreirati za ${farm.label}.\n\n${lines.join('\n\n')}`
+    )
     .addFields(
       { name: 'Ukupno aktivnih radova', value: String(tasks.length), inline: true },
       { name: 'Zadnje osvježenje', value: formatTaskPanelTimestamp(), inline: true }
     );
 }
 
-function buildFarmingTaskPanelRows(hasTasks = false) {
+function buildFarmingTaskPanelRows(farm, hasTasks = false) {
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
+        .setCustomId(`task_start_${farm.key}`)
+        .setLabel('Kreiraj posao (polja)')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`task_general_start_${farm.key}`)
+        .setLabel('Kreiraj zadatak')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
         .setCustomId('task_finish_open')
         .setLabel('Završi zadatak')
-        .setStyle(ButtonStyle.Success)
+        .setStyle(ButtonStyle.Secondary)
         .setDisabled(!hasTasks)
     ),
   ];
@@ -1917,7 +1927,7 @@ async function updateFarmingTaskPanel(guild, farmKey) {
   const tasks = getOpenFieldTasks(farm.key)
     .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
   const embed = buildFarmingTaskPanelEmbed(farm, tasks);
-  const components = buildFarmingTaskPanelRows(tasks.length > 0);
+  const components = buildFarmingTaskPanelRows(farm, tasks.length > 0);
 
   let message = null;
   if (panelIds[farm.key]) {
@@ -3265,6 +3275,16 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
+    if (interaction.commandName === 'task1' || interaction.commandName === 'task2') {
+      const farmKey = interaction.commandName === 'task2' ? 'farm2' : 'farm1';
+      await interaction.deferReply({ ephemeral: true });
+      await updateFarmingTaskPanel(interaction.guild, farmKey);
+      await interaction.editReply({
+        content: `✅ Panel za ${getFarmConfig(farmKey).label} je osvježen.`,
+      });
+      return;
+    }
+
     // /task1 i /task2 – Farming zadaci
 if (interaction.commandName === 'task1' || interaction.commandName === 'task2') {
   const farmKey = interaction.commandName === 'task2' ? 'farm2' : 'farm1';
@@ -4010,6 +4030,16 @@ if (interaction.commandName === 'update-field') {
   // ---------- BUTTONI (TICKETI + FARMING) ----------
   if (interaction.isButton()) {
     if (await handlePollButton(interaction, client)) {
+      return;
+    }
+
+    if (interaction.commandName === 'task1' || interaction.commandName === 'task2') {
+      const farmKey = interaction.commandName === 'task2' ? 'farm2' : 'farm1';
+      await interaction.deferReply({ ephemeral: true });
+      await updateFarmingTaskPanel(interaction.guild, farmKey);
+      await interaction.editReply({
+        content: `✅ Panel za ${getFarmConfig(farmKey).label} je osvježen.`,
+      });
       return;
     }
 
