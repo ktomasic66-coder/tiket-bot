@@ -1849,12 +1849,17 @@ function buildFieldTaskLine(task, index) {
       : task.jobKey === 'kombajniranje' && task.harvestInfo
         ? ` ${task.harvestInfo}`
         : '';
-  const priority =
-    task.priorityLabel && String(task.priorityLabel).trim()
-      ? ` • Prioritet: ${String(task.priorityLabel)
-          .replace(/^[^\p{L}\p{N}]+/u, '')
-          .trim()}`
-      : '';
+  const normalizedPriority = String(task.priority || task.priorityLabel || '')
+    .toLowerCase()
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .trim();
+  const priorityDots = {
+    hitno: ' 🔴',
+    visok: ' 🟠',
+    srednji: ' 🟡',
+    nizak: ' 🟢',
+  };
+  const priority = priorityDots[normalizedPriority] || '';
 
   return `${index + 1}. ${base}${extra}${priority}`;
 }
