@@ -4033,11 +4033,15 @@ if (interaction.commandName === 'update-field') {
 
     await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
 
-    return interaction.update({
+    await interaction.update({
       content: `✅ Završeno: ${buildFieldTaskLine(task, 0).replace(/^1\.\s*/, '')}`,
       embeds: [],
       components: [],
     });
+    setTimeout(() => {
+      interaction.deleteReply().catch(() => {});
+    }, 1500);
+    return;
   }
 
   // ---------- BUTTONI (TICKETI + FARMING) ----------
