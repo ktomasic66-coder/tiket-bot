@@ -1868,12 +1868,13 @@ function buildFarmingTaskPanelEmbed(farm, tasks) {
   const lines = tasks.length
     ? tasks.map((task, index) => buildFieldTaskLine(task, index))
     : ['_Trenutno nema aktivnih radova._'];
+  const legend = 'Legenda prioriteta: 🔴 Hitno | 🟠 Visok | 🟡 Srednji | 🟢 Nizak';
 
   return new EmbedBuilder()
     .setColor('#ffd900')
     .setTitle(`🚜 ${farm.label} - Zadaci`)
     .setDescription(
-      `Odaberi što želiš kreirati za ${farm.label}.\n\n${lines.join('\n\n')}\n\n\n`
+      `Odaberi što želiš kreirati za ${farm.label}.\n${legend}\n\n${lines.join('\n\n')}\n\n\n`
     )
     .setFooter({
       text: `Ukupno aktivnih radova: ${tasks.length}  |  Zadnje osvježenje: ${formatTaskPanelTimestamp()}`,
