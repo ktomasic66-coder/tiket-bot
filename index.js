@@ -1849,8 +1849,14 @@ function buildFieldTaskLine(task, index) {
       : task.jobKey === 'kombajniranje' && task.harvestInfo
         ? ` ${task.harvestInfo}`
         : '';
+  const priority =
+    task.priorityLabel && String(task.priorityLabel).trim()
+      ? ` • Prioritet: ${String(task.priorityLabel)
+          .replace(/^[^\p{L}\p{N}]+/u, '')
+          .trim()}`
+      : '';
 
-  return `${index + 1}. ${base}${extra}`;
+  return `${index + 1}. ${base}${extra}${priority}`;
 }
 
 function buildFarmingTaskPanelEmbed(farm, tasks) {
@@ -1862,12 +1868,11 @@ function buildFarmingTaskPanelEmbed(farm, tasks) {
     .setColor('#ffd900')
     .setTitle(`🚜 ${farm.label} - Zadaci`)
     .setDescription(
-      `Odaberi što želiš kreirati za ${farm.label}.\n\n${lines.join('\n\n')}`
+      `Odaberi što želiš kreirati za ${farm.label}.\n\n${lines.join('\n\n')}\n\n\n`
     )
-    .addFields(
-      { name: 'Ukupno aktivnih radova', value: String(tasks.length), inline: true },
-      { name: 'Zadnje osvježenje', value: formatTaskPanelTimestamp(), inline: true }
-    );
+    .setFooter({
+      text: `Ukupno aktivnih radova: ${tasks.length}  |  Zadnje osvježenje: ${formatTaskPanelTimestamp()}`,
+    });
 }
 
 function buildFarmingTaskPanelRows(farm, hasTasks = false) {
