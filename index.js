@@ -1210,9 +1210,11 @@ function drawTableCellText(ctx, value, x, y, width, height, options = {}) {
   const paddingX = options.paddingX ?? 10;
   const baselineY = y + height / 2 + 7;
   const maxWidth = width - paddingX * 2;
+  const fontFamily =
+    '"DejaVu Sans","Liberation Sans","Arial","Helvetica",sans-serif';
 
   ctx.fillStyle = options.color || '#ffffff';
-  ctx.font = options.font || '18px Consolas, monospace';
+  ctx.font = options.font || `18px ${fontFamily}`;
   ctx.textAlign = options.align || 'left';
   ctx.textBaseline = 'middle';
 
@@ -1255,7 +1257,7 @@ function buildSowingTableImageBuffer(tableState) {
     ctx.fillRect(currentX, 0, column.width, headerHeight);
     ctx.strokeRect(currentX, 0, column.width, headerHeight);
     drawTableCellText(ctx, column.label, currentX, 0, column.width, headerHeight, {
-      font: 'bold 18px Consolas, monospace',
+      font: 'bold 18px "DejaVu Sans","Liberation Sans","Arial","Helvetica",sans-serif',
     });
     currentX += column.width;
   }
