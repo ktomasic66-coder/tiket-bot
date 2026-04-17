@@ -1294,16 +1294,12 @@ function buildSowingTableImageBuffer(tableState) {
   return canvas.toBuffer('image/png');
 }
 
-function buildSowingTableEmbed(tableState) {
-  return new EmbedBuilder()
-    .setColor('#f1c40f')
-    .setTitle('📋 Nova Tablica Sjetve')
-    .setDescription(
-      'Pregled i uređivanje sjetvenog plana direktno iz Discorda.\n' +
-      `Ukupno redova: **${tableState.rows.length}**`
-    )
-    .setImage('attachment://sowing-table.png')
-    .setTimestamp();
+function buildSowingTableMessageContent(tableState) {
+  return [
+    '📋 **Nova Tablica Sjetve**',
+    'Pregled i uređivanje sjetvenog plana direktno iz Discorda.',
+    `Ukupno redova: **${tableState.rows.length}**`,
+  ].join('\n');
 }
 
 async function updateSowingTableMessage(guild) {
@@ -1315,7 +1311,7 @@ async function updateSowingTableMessage(guild) {
   const channel = await guild.channels.fetch(tableState.channelId).catch(() => null);
   if (!channel) return null;
 
-  const embed = buildSowingTableEmbed(tableState);
+  const content = buildSowingTableMessageContent(tableState);
   const controls = buildSowingTableControlRow();
   const attachment = new AttachmentBuilder(buildSowingTableImageBuffer(tableState), {
     name: 'sowing-table.png',
@@ -1335,7 +1331,8 @@ async function updateSowingTableMessage(guild) {
         .filter(
           (msg) =>
             msg.author?.id === client.user?.id &&
-            msg.embeds?.[0]?.title === '📋 Nova Tablica Sjetve'
+            typeof msg.content === 'string' &&
+            msg.content.startsWith('📋 **Nova Tablica Sjetve**')
         )
         .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
 
@@ -1351,13 +1348,14 @@ async function updateSowingTableMessage(guild) {
 
   if (message) {
     await message.edit({
-      embeds: [embed],
+      content,
+      embeds: [],
       components: [controls],
       files: [attachment],
     });
   } else {
     message = await channel.send({
-      embeds: [embed],
+      content,
       components: [controls],
       files: [attachment],
     });
