@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const session = require('express-session');
+const { createCanvas } = require('canvas');
 let mysql = null;
 try {
   mysql = require('mysql2/promise');
@@ -26,6 +27,7 @@ const {
   LabelBuilder,
   TextInputBuilder,
   TextInputStyle,
+  AttachmentBuilder,
   REST,
   Routes,
 } = require('discord.js');
@@ -208,6 +210,13 @@ const DEFAULT_FARMING_FIELDS = [];
 
 // default sezonski podaci za sjetvu
 const DEFAULT_SOWING_SEASONS = [];
+const SOWING_TABLE_CHANNEL_ID = '1494807191113433229';
+const DEFAULT_SOWING_TABLE = {
+  channelId: SOWING_TABLE_CHANNEL_ID,
+  messageId: null,
+  yearLabels: ['1 GOD', '2 GOD', '3 GOD', '4 GOD'],
+  rows: [],
+};
 
 
 function getDefaultData() {
@@ -236,6 +245,7 @@ function getDefaultData() {
     },
     farmingFieldListMessageId: null,
     sowingSeasons: [...DEFAULT_SOWING_SEASONS],   // ✅ OVO NEDOSTAJE
+    sowingTable: JSON.parse(JSON.stringify(DEFAULT_SOWING_TABLE)),
   };
 }
 
@@ -301,6 +311,7 @@ function mergeDbData(raw) {
         ? data.farmingFieldListMessageId
         : base.farmingFieldListMessageId,
     sowingSeasons: Array.isArray(data.sowingSeasons) ? data.sowingSeasons : base.sowingSeasons,
+    sowingTable: normalizeSowingTable(data.sowingTable),
   };
 }
 
@@ -349,6 +360,7 @@ function mergeRemoteSharedConfigIntoCache(remoteData) {
         ? mergedRemote.farmingFieldListMessageId
         : null,
     sowingSeasons: Array.isArray(mergedRemote.sowingSeasons) ? mergedRemote.sowingSeasons : [],
+    sowingTable: normalizeSowingTable(mergedRemote.sowingTable),
   });
 }
 
@@ -425,6 +437,63 @@ async function persistFarmingFieldsToMySql(fieldsByFarm) {
   }
 }
 
+async function readSowingTableRowsFromMySql() {
+  if (!useMySql || !dbPool) return null;
+
+  const [rows] = await dbPool.query(
+    `SELECT field_value, year1_value, year2_value, year3_value, year4_value
+     FROM sowing_table_rows
+     ORDER BY field_value ASC`
+  );
+
+  if (!rows.length) return null;
+
+  return normalizeSowingTableRows(
+    rows.map((row) => ({
+      field: row.field_value,
+      year1: row.year1_value,
+      year2: row.year2_value,
+      year3: row.year3_value,
+      year4: row.year4_value,
+    }))
+  );
+}
+
+async function persistSowingTableRowsToMySql(rows) {
+  if (!useMySql || !dbPool) return;
+
+  const normalizedRows = normalizeSowingTableRows(rows);
+  const values = normalizedRows.map((row) => [
+    row.field,
+    row.year1,
+    row.year2,
+    row.year3,
+    row.year4,
+  ]);
+
+  const conn = await dbPool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query('DELETE FROM sowing_table_rows');
+
+    if (values.length) {
+      await conn.query(
+        `INSERT INTO sowing_table_rows
+          (field_value, year1_value, year2_value, year3_value, year4_value)
+         VALUES ?`,
+        [values]
+      );
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 async function persistDbCache() {
   if (!useMySql || !dbPool) return;
 
@@ -444,6 +513,7 @@ async function persistDbCache() {
         farmingFields: payload.farmingFields,
         farmingFieldListMessageId: payload.farmingFieldListMessageId,
         sowingSeasons: payload.sowingSeasons,
+        sowingTable: payload.sowingTable,
       });
     }
   } catch (err) {
@@ -570,6 +640,17 @@ async function initMySql() {
         PRIMARY KEY (farm_key, field_value)
       )
     `);
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS sowing_table_rows (
+        field_value VARCHAR(120) NOT NULL PRIMARY KEY,
+        year1_value VARCHAR(160) NOT NULL DEFAULT '',
+        year2_value VARCHAR(160) NOT NULL DEFAULT '',
+        year3_value VARCHAR(160) NOT NULL DEFAULT '',
+        year4_value VARCHAR(160) NOT NULL DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
 
     const row = await readSharedBotConfigRow();
 
@@ -589,6 +670,19 @@ async function initMySql() {
     } else {
       await persistFarmingFieldsToMySql(dbCache.farmingFields);
     }
+    const sqlSowingTableRows = await readSowingTableRowsFromMySql();
+    if (sqlSowingTableRows) {
+      dbCache = mergeDbData({
+        ...dbCache,
+        sowingTable: {
+          ...(dbCache.sowingTable || {}),
+          rows: sqlSowingTableRows,
+        },
+      });
+      fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
+    } else if (dbCache.sowingTable?.rows?.length) {
+      await persistSowingTableRowsToMySql(dbCache.sowingTable.rows);
+    }
     await migrateLegacyTicketBlacklist();
     setInterval(() => {
       refreshSharedBotConfigFromMySql(false).catch(() => {});
@@ -598,6 +692,19 @@ async function initMySql() {
           dbCache = mergeDbData({
             ...dbCache,
             farmingFields: fields,
+          });
+          fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
+        })
+        .catch(() => {});
+      readSowingTableRowsFromMySql()
+        .then((rows) => {
+          if (!rows) return;
+          dbCache = mergeDbData({
+            ...dbCache,
+            sowingTable: {
+              ...(dbCache.sowingTable || {}),
+              rows,
+            },
           });
           fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
         })
@@ -821,6 +928,54 @@ function sortFarmingFieldLabels(list) {
   return [...list].sort((a, b) => collator.compare(a, b));
 }
 
+function sortSowingTableRows(rows) {
+  const collator = new Intl.Collator('hr', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+
+  return [...rows].sort((a, b) => collator.compare(a.field, b.field));
+}
+
+function normalizeSowingTableRows(rows) {
+  const seen = new Set();
+  const normalized = [];
+
+  for (const rawRow of Array.isArray(rows) ? rows : []) {
+    const field = String(rawRow?.field || '').trim();
+    if (!field) continue;
+
+    const key = field.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    normalized.push({
+      field,
+      year1: String(rawRow?.year1 || '').trim(),
+      year2: String(rawRow?.year2 || '').trim(),
+      year3: String(rawRow?.year3 || '').trim(),
+      year4: String(rawRow?.year4 || '').trim(),
+    });
+  }
+
+  return sortSowingTableRows(normalized);
+}
+
+function normalizeSowingTable(rawTable) {
+  const data = rawTable && typeof rawTable === 'object' ? rawTable : {};
+  const sourceLabels = Array.isArray(data.yearLabels) ? data.yearLabels : [];
+  const labels = DEFAULT_SOWING_TABLE.yearLabels.map((fallback, index) =>
+    String(sourceLabels[index] || fallback).trim() || fallback
+  );
+
+  return {
+    channelId: String(data.channelId || SOWING_TABLE_CHANNEL_ID).trim() || SOWING_TABLE_CHANNEL_ID,
+    messageId: data.messageId ? String(data.messageId) : null,
+    yearLabels: labels,
+    rows: normalizeSowingTableRows(data.rows),
+  };
+}
+
 function normalizeFarmingFields(rawFields) {
   const uniqueStrings = (list) =>
     sortFarmingFieldLabels(Array.from(new Set((list || []).map(String))));
@@ -1009,6 +1164,191 @@ async function updateFarmingFieldsEmbed(guild) {
   const sent = await channel.send({ embeds: [embed], components: [row] });
   data.farmingFieldListMessageId = sent.id;
   saveDb(data);
+}
+
+function getSowingTableState() {
+  const data = loadDb();
+  return normalizeSowingTable(data.sowingTable);
+}
+
+function saveSowingTableState(nextState) {
+  const data = loadDb();
+  data.sowingTable = normalizeSowingTable(nextState);
+  saveDb(data);
+  persistSowingTableRowsToMySql(data.sowingTable.rows).catch((err) => {
+    console.log('SOWING TABLE SAVE ERROR:', err.message);
+  });
+}
+
+function buildSowingTableControlRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('sowing_table_add')
+      .setLabel('Dodaj red')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('sowing_table_edit')
+      .setLabel('Uredi polje')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('sowing_table_years')
+      .setLabel('Promijeni godinu')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('sowing_table_delete')
+      .setLabel('Obriši red')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('sowing_table_refresh')
+      .setLabel('Osvježi')
+      .setStyle(ButtonStyle.Secondary)
+  );
+}
+
+function drawTableCellText(ctx, value, x, y, width, height, options = {}) {
+  const text = String(value || '').trim();
+  const paddingX = options.paddingX ?? 10;
+  const baselineY = y + height / 2 + 7;
+  const maxWidth = width - paddingX * 2;
+
+  ctx.fillStyle = options.color || '#ffffff';
+  ctx.font = options.font || '18px Consolas, monospace';
+  ctx.textAlign = options.align || 'left';
+  ctx.textBaseline = 'middle';
+
+  let output = text;
+  while (output && ctx.measureText(output).width > maxWidth) {
+    output = `${output.slice(0, -2)}…`;
+  }
+
+  const drawX = options.align === 'center' ? x + width / 2 : x + paddingX;
+  ctx.fillText(output, drawX, baselineY);
+}
+
+function buildSowingTableImageBuffer(tableState) {
+  const columns = [
+    { key: 'field', label: 'POLJE', width: 220 },
+    { key: 'year1', label: tableState.yearLabels[0], width: 220 },
+    { key: 'year2', label: tableState.yearLabels[1], width: 220 },
+    { key: 'year3', label: tableState.yearLabels[2], width: 220 },
+    { key: 'year4', label: tableState.yearLabels[3], width: 220 },
+  ];
+  const rowHeight = 40;
+  const headerHeight = 44;
+  const tableRows = tableState.rows.length
+    ? tableState.rows
+    : [{ field: '—', year1: 'Nema podataka', year2: '', year3: '', year4: '' }];
+  const canvasWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const canvasHeight = headerHeight + tableRows.length * rowHeight + 2;
+  const canvas = createCanvas(canvasWidth, canvasHeight);
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#202225';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  ctx.strokeStyle = '#8f8f8f';
+  ctx.lineWidth = 1;
+
+  let currentX = 0;
+  for (const column of columns) {
+    ctx.fillStyle = '#2b2d31';
+    ctx.fillRect(currentX, 0, column.width, headerHeight);
+    ctx.strokeRect(currentX, 0, column.width, headerHeight);
+    drawTableCellText(ctx, column.label, currentX, 0, column.width, headerHeight, {
+      font: 'bold 18px Consolas, monospace',
+    });
+    currentX += column.width;
+  }
+
+  tableRows.forEach((row, rowIndex) => {
+    let x = 0;
+    const y = headerHeight + rowIndex * rowHeight;
+
+    columns.forEach((column) => {
+      ctx.fillStyle = rowIndex % 2 === 0 ? '#25272b' : '#2c2f33';
+      ctx.fillRect(x, y, column.width, rowHeight);
+      ctx.strokeRect(x, y, column.width, rowHeight);
+      drawTableCellText(ctx, row[column.key], x, y, column.width, rowHeight);
+      x += column.width;
+    });
+  });
+
+  return canvas.toBuffer('image/png');
+}
+
+function buildSowingTableEmbed(tableState) {
+  return new EmbedBuilder()
+    .setColor('#f1c40f')
+    .setTitle('📋 Nova Tablica Sjetve')
+    .setDescription(
+      'Pregled i uređivanje sjetvenog plana direktno iz Discorda.\n' +
+      `Ukupno redova: **${tableState.rows.length}**`
+    )
+    .setImage('attachment://sowing-table.png')
+    .setTimestamp();
+}
+
+async function updateSowingTableMessage(guild) {
+  if (!guild) return null;
+
+  const tableState = getSowingTableState();
+  if (!tableState.channelId) return null;
+
+  const channel = await guild.channels.fetch(tableState.channelId).catch(() => null);
+  if (!channel) return null;
+
+  const embed = buildSowingTableEmbed(tableState);
+  const controls = buildSowingTableControlRow();
+  const attachment = new AttachmentBuilder(buildSowingTableImageBuffer(tableState), {
+    name: 'sowing-table.png',
+  });
+  const data = loadDb();
+  const nextState = normalizeSowingTable(data.sowingTable);
+
+  let message = null;
+  if (tableState.messageId) {
+    message = await channel.messages.fetch(tableState.messageId).catch(() => null);
+  }
+
+  if (!message) {
+    const recentMessages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+    if (recentMessages?.size) {
+      const matches = Array.from(recentMessages.values())
+        .filter(
+          (msg) =>
+            msg.author?.id === client.user?.id &&
+            msg.embeds?.[0]?.title === '📋 Nova Tablica Sjetve'
+        )
+        .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+
+      if (matches.length) {
+        const [primary, ...duplicates] = matches;
+        message = primary;
+        for (const duplicate of duplicates) {
+          await duplicate.delete().catch(() => {});
+        }
+      }
+    }
+  }
+
+  if (message) {
+    await message.edit({
+      embeds: [embed],
+      components: [controls],
+      files: [attachment],
+    });
+  } else {
+    message = await channel.send({
+      embeds: [embed],
+      components: [controls],
+      files: [attachment],
+    });
+  }
+
+  nextState.channelId = channel.id;
+  nextState.messageId = message.id;
+  saveSowingTableState(nextState);
+  return message;
 }
 
 // =====================
@@ -2434,6 +2774,7 @@ client.once('ready', async () => {
       await updateFarmingFieldsEmbed(guild);
       await updateFarmingTaskPanel(guild, 'farm1');
       await updateFarmingTaskPanel(guild, 'farm2');
+      await updateSowingTableMessage(guild);
       console.log("🌾 Sezona Sjetve — embed obnovljen pri startu bota.");
     }
   } catch (err) {
@@ -3461,6 +3802,30 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
       });
     }
 
+    if (interaction.commandName === 'tablica') {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({
+          content: '⛔ Samo staff/admin može postaviti tablicu sjetve.',
+          ephemeral: true,
+        });
+      }
+
+      const state = getSowingTableState();
+      saveSowingTableState({
+        ...state,
+        channelId: SOWING_TABLE_CHANNEL_ID,
+        messageId: state.channelId === SOWING_TABLE_CHANNEL_ID ? state.messageId : null,
+      });
+
+      await updateSowingTableMessage(interaction.guild);
+      await interaction.reply({
+        content: `✅ Tablica sjetve je postavljena ili osvježena u kanalu <#${SOWING_TABLE_CHANNEL_ID}>.`,
+        ephemeral: true,
+      });
+      scheduleInteractionReplyDeletion(interaction, 2000);
+      return;
+    }
+
     // /reset-season – resetira aktivnu sezonu sjetve
     if (interaction.commandName === 'blacklist') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
@@ -4082,6 +4447,122 @@ if (interaction.commandName === 'update-field') {
   if (interaction.isButton()) {
     if (await handlePollButton(interaction, client)) {
       return;
+    }
+
+    if (interaction.customId.startsWith('sowing_table_')) {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({
+          content: '⛔ Samo staff/admin može uređivati tablicu sjetve.',
+          ephemeral: true,
+        });
+      }
+
+      if (interaction.customId === 'sowing_table_refresh') {
+        await updateSowingTableMessage(interaction.guild);
+        await interaction.reply({
+          content: '✅ Tablica sjetve je osvježena.',
+          ephemeral: true,
+        });
+        scheduleInteractionReplyDeletion(interaction, 1500);
+        return;
+      }
+
+      if (interaction.customId === 'sowing_table_add') {
+        const modal = new ModalBuilder()
+          .setCustomId('sowing_table_add_modal')
+          .setTitle('Dodaj red u tablicu');
+
+        const inputs = [
+          ['field', 'Polje'],
+          ['year1', '1. godina'],
+          ['year2', '2. godina'],
+          ['year3', '3. godina'],
+          ['year4', '4. godina'],
+        ].map(([id, label]) =>
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId(id)
+              .setLabel(label)
+              .setStyle(TextInputStyle.Short)
+              .setRequired(id === 'field')
+              .setMaxLength(120)
+          )
+        );
+
+        modal.addComponents(...inputs);
+        await interaction.showModal(modal);
+        return;
+      }
+
+      if (interaction.customId === 'sowing_table_edit') {
+        const modal = new ModalBuilder()
+          .setCustomId('sowing_table_edit_modal')
+          .setTitle('Uredi red u tablici');
+
+        const inputs = [
+          ['field', 'Polje koje uređuješ'],
+          ['year1', '1. godina'],
+          ['year2', '2. godina'],
+          ['year3', '3. godina'],
+          ['year4', '4. godina'],
+        ].map(([id, label]) =>
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId(id)
+              .setLabel(label)
+              .setStyle(TextInputStyle.Short)
+              .setRequired(id === 'field')
+              .setMaxLength(120)
+          )
+        );
+
+        modal.addComponents(...inputs);
+        await interaction.showModal(modal);
+        return;
+      }
+
+      if (interaction.customId === 'sowing_table_years') {
+        const state = getSowingTableState();
+        const modal = new ModalBuilder()
+          .setCustomId('sowing_table_years_modal')
+          .setTitle('Promijeni nazive godina');
+
+        const inputs = state.yearLabels.map((label, index) =>
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId(`year_label_${index + 1}`)
+              .setLabel(`${index + 1}. stupac`)
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setValue(label)
+              .setMaxLength(80)
+          )
+        );
+
+        modal.addComponents(...inputs);
+        await interaction.showModal(modal);
+        return;
+      }
+
+      if (interaction.customId === 'sowing_table_delete') {
+        const modal = new ModalBuilder()
+          .setCustomId('sowing_table_delete_modal')
+          .setTitle('Obriši red iz tablice');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('field')
+              .setLabel('Polje koje želiš obrisati')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setMaxLength(120)
+          )
+        );
+
+        await interaction.showModal(modal);
+        return;
+      }
     }
 
     if (interaction.commandName === 'task1' || interaction.commandName === 'task2') {
@@ -5003,6 +5484,135 @@ if (!task.cropName) {
 
     if (await handlePollModal(interaction, client)) {
       return;
+    }
+
+    if (
+      interaction.customId === 'sowing_table_add_modal' ||
+      interaction.customId === 'sowing_table_edit_modal' ||
+      interaction.customId === 'sowing_table_years_modal' ||
+      interaction.customId === 'sowing_table_delete_modal'
+    ) {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return interaction.reply({
+          content: '⛔ Samo staff/admin može uređivati tablicu sjetve.',
+          ephemeral: true,
+        });
+      }
+
+      const state = getSowingTableState();
+      const rows = [...state.rows];
+
+      if (interaction.customId === 'sowing_table_add_modal') {
+        const field = interaction.fields.getTextInputValue('field').trim();
+        if (!field) {
+          return interaction.reply({
+            content: '⚠️ Moraš upisati polje.',
+            ephemeral: true,
+          });
+        }
+
+        const exists = rows.some((row) => row.field.toLowerCase() === field.toLowerCase());
+        if (exists) {
+          return interaction.reply({
+            content: `⚠️ Polje **${field}** već postoji u tablici.`,
+            ephemeral: true,
+          });
+        }
+
+        rows.push({
+          field,
+          year1: interaction.fields.getTextInputValue('year1').trim(),
+          year2: interaction.fields.getTextInputValue('year2').trim(),
+          year3: interaction.fields.getTextInputValue('year3').trim(),
+          year4: interaction.fields.getTextInputValue('year4').trim(),
+        });
+
+        saveSowingTableState({
+          ...state,
+          rows,
+        });
+        await updateSowingTableMessage(interaction.guild);
+        await interaction.reply({
+          content: `✅ Red za polje **${field}** je dodan u tablicu.`,
+          ephemeral: true,
+        });
+        scheduleInteractionReplyDeletion(interaction, 1800);
+        return;
+      }
+
+      if (interaction.customId === 'sowing_table_edit_modal') {
+        const field = interaction.fields.getTextInputValue('field').trim();
+        const index = rows.findIndex((row) => row.field.toLowerCase() === field.toLowerCase());
+
+        if (index === -1) {
+          return interaction.reply({
+            content: `⚠️ Polje **${field}** nije pronađeno u tablici.`,
+            ephemeral: true,
+          });
+        }
+
+        rows[index] = {
+          field: rows[index].field,
+          year1: interaction.fields.getTextInputValue('year1').trim(),
+          year2: interaction.fields.getTextInputValue('year2').trim(),
+          year3: interaction.fields.getTextInputValue('year3').trim(),
+          year4: interaction.fields.getTextInputValue('year4').trim(),
+        };
+
+        saveSowingTableState({
+          ...state,
+          rows,
+        });
+        await updateSowingTableMessage(interaction.guild);
+        await interaction.reply({
+          content: `✅ Red za polje **${field}** je ažuriran.`,
+          ephemeral: true,
+        });
+        scheduleInteractionReplyDeletion(interaction, 1800);
+        return;
+      }
+
+      if (interaction.customId === 'sowing_table_years_modal') {
+        const yearLabels = [1, 2, 3, 4].map((index) =>
+          interaction.fields.getTextInputValue(`year_label_${index}`).trim() || `${index} GOD`
+        );
+
+        saveSowingTableState({
+          ...state,
+          yearLabels,
+        });
+        await updateSowingTableMessage(interaction.guild);
+        await interaction.reply({
+          content: '✅ Nazivi stupaca su ažurirani.',
+          ephemeral: true,
+        });
+        scheduleInteractionReplyDeletion(interaction, 1800);
+        return;
+      }
+
+      if (interaction.customId === 'sowing_table_delete_modal') {
+        const field = interaction.fields.getTextInputValue('field').trim();
+        const nextRows = rows.filter((row) => row.field.toLowerCase() !== field.toLowerCase());
+
+        if (nextRows.length === rows.length) {
+          return interaction.reply({
+            content: `⚠️ Polje **${field}** nije pronađeno u tablici.`,
+            ephemeral: true,
+          });
+        }
+
+        saveSowingTableState({
+          ...state,
+          rows: nextRows,
+        });
+        await updateSowingTableMessage(interaction.guild);
+        await interaction.reply({
+          content: `🗑️ Red za polje **${field}** je obrisan.`,
+          ephemeral: true,
+        });
+        scheduleInteractionReplyDeletion(interaction, 1800);
+        return;
+      }
     }
 
     if (interaction.customId.startsWith('ticket_answers:')) {

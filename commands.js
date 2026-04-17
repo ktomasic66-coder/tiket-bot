@@ -69,6 +69,10 @@ const commands = [
     .setDescription('Posalji zajednicki panel za upravljanje poljima u kanal za polja.'),
 
   new SlashCommandBuilder()
+    .setName('tablica')
+    .setDescription('Postavi ili osvjezi zivu tablicu sjetve u ovom kanalu.'),
+
+  new SlashCommandBuilder()
     .setName('blacklist')
     .setDescription('Dodaj korisnika na blacklistu za otvaranje ticketa.')
     .addUserOption((opt) =>
