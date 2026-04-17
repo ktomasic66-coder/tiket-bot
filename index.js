@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const session = require('express-session');
-const { createCanvas } = require('canvas');
+const { createCanvas, registerFont } = require('canvas');
 let mysql = null;
 try {
   mysql = require('mysql2/promise');
@@ -45,6 +45,24 @@ const {
 startFs25Bridge().catch((error) => {
   console.error('[fs25-bridge] Startup failed inside bot:', error);
 });
+
+const LOCAL_SOWING_TABLE_FONT_FAMILY = 'SowingTableFont';
+const LOCAL_SOWING_TABLE_FONT_PATH = path.join(
+  __dirname,
+  'assets',
+  'fonts',
+  'arial.ttf'
+);
+
+if (fs.existsSync(LOCAL_SOWING_TABLE_FONT_PATH)) {
+  try {
+    registerFont(LOCAL_SOWING_TABLE_FONT_PATH, {
+      family: LOCAL_SOWING_TABLE_FONT_FAMILY,
+    });
+  } catch (error) {
+    console.log('Sowing table font register error:', error.message);
+  }
+}
 
 function isUnknownInteractionError(error) {
   return error?.code === 10062;
@@ -1212,7 +1230,7 @@ function drawTableCellText(ctx, value, x, y, width, height, options = {}) {
   const maxWidth = width - paddingX * 2;
 
   ctx.fillStyle = options.color || '#ffffff';
-  ctx.font = options.font || '18px sans-serif';
+  ctx.font = options.font || `18px "${LOCAL_SOWING_TABLE_FONT_FAMILY}"`;
   ctx.textAlign = options.align || 'left';
   ctx.textBaseline = 'middle';
 
@@ -1255,7 +1273,7 @@ function buildSowingTableImageBuffer(tableState) {
     ctx.fillRect(currentX, 0, column.width, headerHeight);
     ctx.strokeRect(currentX, 0, column.width, headerHeight);
     drawTableCellText(ctx, column.label, currentX, 0, column.width, headerHeight, {
-      font: 'bold 18px sans-serif',
+      font: `bold 18px "${LOCAL_SOWING_TABLE_FONT_FAMILY}"`,
     });
     currentX += column.width;
   }
