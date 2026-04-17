@@ -4695,8 +4695,8 @@ if (interaction.customId.startsWith('task_priority_')) {
 
       const input = new TextInputBuilder()
         .setCustomId('seed_name')
-        .setLabel('Što se sije? (npr. kukuruz, ječam...)')
         .setStyle(TextInputStyle.Short)
+        .setPlaceholder('npr. kukuruz, ječam...')
         .setRequired(true);
 
       const prioritySelect = new StringSelectMenuBuilder()
@@ -4740,8 +4740,8 @@ if (interaction.customId.startsWith('task_priority_')) {
 
       const input = new TextInputBuilder()
         .setCustomId('harvest_info')
-        .setLabel('Što se kombajnira? (npr. pšenica, soja...)')
         .setStyle(TextInputStyle.Short)
+        .setPlaceholder('npr. pšenica, soja...')
         .setRequired(true);
 
       const prioritySelect = new StringSelectMenuBuilder()
