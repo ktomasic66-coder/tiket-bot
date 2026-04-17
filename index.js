@@ -4615,6 +4615,12 @@ if (interaction.customId.startsWith('task_priority_')) {
       { name: 'Farma', value: farm.label, inline: true },
       { name: 'Polje', value: `Polje ${current.field}`, inline: true },
       { name: 'Posao', value: current.jobName, inline: true },
+      ...(current.cropName
+        ? [{ name: 'Kultura', value: current.cropName, inline: true }]
+        : []),
+      ...(current.harvestInfo
+        ? [{ name: 'Detalji', value: current.harvestInfo, inline: true }]
+        : []),
       { name: 'Izradio', value: `<@${interaction.user.id}>`, inline: true },
     )
     .setTimestamp();
@@ -4633,6 +4639,8 @@ if (interaction.customId.startsWith('task_priority_')) {
     taskId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
     jobKey: current.jobKey,
     jobName: current.jobName,
+    cropName: current.cropName,
+    harvestInfo: current.harvestInfo,
     priority: key,
     priorityLabel: prio.label,
     priorityValue: prio.value,
@@ -4642,6 +4650,10 @@ if (interaction.customId.startsWith('task_priority_')) {
     createdBy: interaction.user.id,
     createdAt: new Date().toISOString(),
   });
+
+  if (current.jobKey === 'sijanje' && current.cropName) {
+    await handleNewSowingTask(interaction.guild, current.field, current.cropName);
+  }
 
   await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
 
@@ -5211,56 +5223,47 @@ if (
 
       const seedName = interaction.fields.getTextInputValue('seed_name');
       const farm = getFarmConfig(current.farmKey || 'farm1');
-
-      // 🌱 Sezona Sjetve – registracija novog posijanog polja
-      await handleNewSowingTask(interaction.guild, current.field, seedName);
-
+      current.jobKey = 'sijanje';
+      current.jobName = 'Sijanje';
+      current.cropName = seedName;
+      delete current.harvestInfo;
+      activeTasks.set(interaction.user.id, current);
 
       const embed = new EmbedBuilder()
-        .setColor('#00a84d')
-        .setTitle('✅ Novi zadatak kreiran')
-        .addFields(
-          { name: 'Farma', value: farm.label, inline: true },
-          { name: 'Polje', value: `Polje ${current.field}`, inline: true },
-          { name: 'Posao', value: 'Sijanje', inline: true },
-          { name: 'Kultura', value: seedName, inline: true },
-          { name: 'Izradio', value: `<@${interaction.user.id}>`, inline: true }
-        )
-        .setTimestamp();
+        .setColor('#5865f2')
+        .setTitle('🚦 Odaberi prioritet posla')
+        .setDescription(
+          `🏡 **Farma:** ${farm.label}\n` +
+          `🚜 **Polje:** ${current.field}\n` +
+          `🛠️ **Posao:** ${current.jobName}\n` +
+          `🌱 **Kultura:** ${seedName}\n\n` +
+          'Odaberi prioritet:'
+        );
 
-      const doneRow = new ActionRowBuilder().addComponents(
+      const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId('task_done')
-          .setLabel('✅ Zadatak završen')
+          .setCustomId('task_priority_hitno')
+          .setLabel('🔴 HITNO')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('task_priority_visok')
+          .setLabel('🟠 Visok')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('task_priority_srednji')
+          .setLabel('🟡 Srednji')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('task_priority_nizak')
+          .setLabel('🟢 Nizak')
           .setStyle(ButtonStyle.Success)
       );
 
-
       await interaction.reply({
-        content:
-          '✅ Zadatak za sijanje je kreiran i objavljen u kanalu za poslove.',
+        embeds: [embed],
+        components: [row],
         ephemeral: true,
       });
-
-
-      saveFarmingTask({
-        taskId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
-        farmKey: farm.key,
-        farmLabel: farm.label,
-        field: current.field,
-        jobKey: 'sijanje',
-        jobName: 'Sijanje',
-        cropName: seedName,
-        status: 'open',
-        fromFs: false,
-        channelId: farm.jobChannelId,
-        createdBy: interaction.user.id,
-        createdAt: new Date().toISOString(),
-      });
-
-      await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
-
-      activeTasks.delete(interaction.user.id);
       return;
     }
 
@@ -5394,52 +5397,47 @@ if (
 
       const harvestInfo = interaction.fields.getTextInputValue('harvest_info');
       const farm = getFarmConfig(current.farmKey || 'farm1');
+      current.jobKey = 'kombajniranje';
+      current.jobName = 'Kombajniranje';
+      current.harvestInfo = harvestInfo;
+      delete current.cropName;
+      activeTasks.set(interaction.user.id, current);
 
       const embed = new EmbedBuilder()
-        .setColor('#00a84d')
-        .setTitle('✅ Novi zadatak kreiran')
-        .addFields(
-          { name: 'Farma', value: farm.label, inline: true },
-          { name: 'Polje', value: `Polje ${current.field}`, inline: true },
-          { name: 'Posao', value: 'Kombajniranje', inline: true },
-          { name: 'Detalji', value: harvestInfo, inline: true },
-          { name: 'Izradio', value: `<@${interaction.user.id}>`, inline: true }
-        )
-        .setTimestamp();
+        .setColor('#5865f2')
+        .setTitle('🚦 Odaberi prioritet posla')
+        .setDescription(
+          `🏡 **Farma:** ${farm.label}\n` +
+          `🚜 **Polje:** ${current.field}\n` +
+          `🛠️ **Posao:** ${current.jobName}\n` +
+          `📋 **Detalji:** ${harvestInfo}\n\n` +
+          'Odaberi prioritet:'
+        );
 
-      const doneRow = new ActionRowBuilder().addComponents(
+      const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId('task_done')
-          .setLabel('✅ Zadatak završen')
+          .setCustomId('task_priority_hitno')
+          .setLabel('🔴 HITNO')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('task_priority_visok')
+          .setLabel('🟠 Visok')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('task_priority_srednji')
+          .setLabel('🟡 Srednji')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('task_priority_nizak')
+          .setLabel('🟢 Nizak')
           .setStyle(ButtonStyle.Success)
       );
 
-
       await interaction.reply({
-        content:
-          '✅ Zadatak za kombajniranje je kreiran i objavljen u kanalu za poslove.',
+        embeds: [embed],
+        components: [row],
         ephemeral: true,
       });
-
-
-      saveFarmingTask({
-        taskId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
-        farmKey: farm.key,
-        farmLabel: farm.label,
-        field: current.field,
-        jobKey: 'kombajniranje',
-        jobName: 'Kombajniranje',
-        status: 'open',
-        fromFs: false,
-        channelId: farm.jobChannelId,
-        harvestInfo,
-        createdBy: interaction.user.id,
-        createdAt: new Date().toISOString(),
-      });
-
-      await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
-
-      activeTasks.delete(interaction.user.id);
       return;
     }
   }
