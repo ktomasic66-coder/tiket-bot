@@ -811,8 +811,18 @@ function getTicketConfig() {
   return merged;
 }
 
+function sortFarmingFieldLabels(list) {
+  const collator = new Intl.Collator('hr', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+
+  return [...list].sort((a, b) => collator.compare(a, b));
+}
+
 function normalizeFarmingFields(rawFields) {
-  const uniqueStrings = (list) => Array.from(new Set((list || []).map(String)));
+  const uniqueStrings = (list) =>
+    sortFarmingFieldLabels(Array.from(new Set((list || []).map(String))));
 
   if (Array.isArray(rawFields)) {
     return {
