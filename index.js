@@ -889,6 +889,19 @@ function getTaskPriorities() {
   };
 }
 
+function scheduleInteractionReplyDeletion(interaction, delayMs = 2000) {
+  setTimeout(() => {
+    interaction.deleteReply().catch(() => {});
+  }, delayMs);
+}
+
+async function cleanupTransientTaskMessage(interaction, current) {
+  const messageId = current?.transientMessageId;
+  if (!messageId || !interaction.channel) return;
+
+  await interaction.channel.messages.delete(messageId).catch(() => {});
+}
+
 // helper: spremi polja u db.json
 function saveFarmingFields(farmKey, fields) {
   const data = loadDb();
@@ -3807,6 +3820,7 @@ if (interaction.commandName === 'update-field') {
     const current = activeTasks.get(interaction.user.id) || {};
     const farm = getFarmConfig(current.farmKey || 'farm1');
     current.field = fieldId;
+    current.transientMessageId = interaction.message?.id || current.transientMessageId;
     activeTasks.set(interaction.user.id, current);
 
     const nextEmbed = new EmbedBuilder()
@@ -4333,6 +4347,7 @@ if (
       const current = activeTasks.get(interaction.user.id) || {};
       const farm = getFarmConfig(current.farmKey || 'farm1');
       current.field = fieldId;
+      current.transientMessageId = interaction.message?.id || current.transientMessageId;
       activeTasks.set(interaction.user.id, current);
 
       const embed = new EmbedBuilder()
@@ -4597,9 +4612,7 @@ if (interaction.customId.startsWith('task_priority_')) {
       embeds: [],
       components: [],
     });
-    setTimeout(() => {
-      interaction.deleteReply().catch(() => {});
-    }, 1500);
+    scheduleInteractionReplyDeletion(interaction, 1500);
     return;
   }
 
@@ -4669,9 +4682,7 @@ if (interaction.customId.startsWith('task_priority_')) {
     embeds: [],
     components: [],
   });
-  setTimeout(() => {
-    interaction.deleteReply().catch(() => {});
-  }, 1500);
+  scheduleInteractionReplyDeletion(interaction, 1500);
   return;
 }
 
@@ -5258,6 +5269,9 @@ if (
         return;
       }
 
+      current.transientMessageId = interaction.message?.id || current.transientMessageId;
+      activeTasks.set(interaction.user.id, current);
+
       const seedName = interaction.fields.getTextInputValue('seed_name');
       const priorityKey =
         interaction.fields.getStringSelectValues('task_priority_select')?.[0];
@@ -5291,12 +5305,14 @@ if (
 
       await handleNewSowingTask(interaction.guild, current.field, seedName);
       await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
+      await cleanupTransientTaskMessage(interaction, current);
       activeTasks.delete(interaction.user.id);
 
       await interaction.reply({
         content: `✅ Zadatak za sijanje je kreiran s prioritetom ${prio.label}.`,
         ephemeral: true,
       });
+      scheduleInteractionReplyDeletion(interaction);
       return;
     }
 
@@ -5428,6 +5444,9 @@ if (
         return;
       }
 
+      current.transientMessageId = interaction.message?.id || current.transientMessageId;
+      activeTasks.set(interaction.user.id, current);
+
       const harvestInfo = interaction.fields.getTextInputValue('harvest_info');
       const priorityKey =
         interaction.fields.getStringSelectValues('task_priority_select')?.[0];
@@ -5460,12 +5479,14 @@ if (
       });
 
       await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
+      await cleanupTransientTaskMessage(interaction, current);
       activeTasks.delete(interaction.user.id);
 
       await interaction.reply({
         content: `✅ Zadatak za kombajniranje je kreiran s prioritetom ${prio.label}.`,
         ephemeral: true,
       });
+      scheduleInteractionReplyDeletion(interaction);
       return;
     }
   }
