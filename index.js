@@ -228,12 +228,25 @@ const DEFAULT_FARMING_FIELDS = [];
 
 // default sezonski podaci za sjetvu
 const DEFAULT_SOWING_SEASONS = [];
-const SOWING_TABLE_CHANNEL_ID = '1494807191113433229';
+const SOWING_TABLE_CHANNEL_IDS = {
+  farm1: '1494813331842662511',
+  farm2: '1494807191113433229',
+};
+const SOWING_TABLE_CHANNEL_ID = SOWING_TABLE_CHANNEL_IDS.farm2;
 const DEFAULT_SOWING_TABLE = {
-  channelId: SOWING_TABLE_CHANNEL_ID,
   messageId: null,
   yearLabels: ['1 GOD', '2 GOD', '3 GOD', '4 GOD'],
   rows: [],
+};
+const DEFAULT_SOWING_TABLES = {
+  farm1: {
+    ...DEFAULT_SOWING_TABLE,
+    channelId: SOWING_TABLE_CHANNEL_IDS.farm1,
+  },
+  farm2: {
+    ...DEFAULT_SOWING_TABLE,
+    channelId: SOWING_TABLE_CHANNEL_IDS.farm2,
+  },
 };
 
 
@@ -263,7 +276,7 @@ function getDefaultData() {
     },
     farmingFieldListMessageId: null,
     sowingSeasons: [...DEFAULT_SOWING_SEASONS],   // ✅ OVO NEDOSTAJE
-    sowingTable: JSON.parse(JSON.stringify(DEFAULT_SOWING_TABLE)),
+    sowingTables: JSON.parse(JSON.stringify(DEFAULT_SOWING_TABLES)),
   };
 }
 
@@ -329,7 +342,7 @@ function mergeDbData(raw) {
         ? data.farmingFieldListMessageId
         : base.farmingFieldListMessageId,
     sowingSeasons: Array.isArray(data.sowingSeasons) ? data.sowingSeasons : base.sowingSeasons,
-    sowingTable: normalizeSowingTable(data.sowingTable),
+    sowingTables: normalizeSowingTables(data.sowingTables || data.sowingTable),
   };
 }
 
@@ -378,7 +391,7 @@ function mergeRemoteSharedConfigIntoCache(remoteData) {
         ? mergedRemote.farmingFieldListMessageId
         : null,
     sowingSeasons: Array.isArray(mergedRemote.sowingSeasons) ? mergedRemote.sowingSeasons : [],
-    sowingTable: normalizeSowingTable(mergedRemote.sowingTable),
+    sowingTables: normalizeSowingTables(mergedRemote.sowingTables || mergedRemote.sowingTable),
   });
 }
 
@@ -459,35 +472,50 @@ async function readSowingTableRowsFromMySql() {
   if (!useMySql || !dbPool) return null;
 
   const [rows] = await dbPool.query(
-    `SELECT field_value, year1_value, year2_value, year3_value, year4_value
+    `SELECT farm_key, field_value, year1_value, year2_value, year3_value, year4_value
      FROM sowing_table_rows
-     ORDER BY field_value ASC`
+     ORDER BY farm_key ASC, field_value ASC`
   );
 
   if (!rows.length) return null;
 
-  return normalizeSowingTableRows(
-    rows.map((row) => ({
+  const grouped = { farm1: [], farm2: [] };
+  for (const row of rows) {
+    const farmKey = String(row.farm_key || '').trim();
+    if (!grouped[farmKey]) grouped[farmKey] = [];
+    grouped[farmKey].push({
       field: row.field_value,
       year1: row.year1_value,
       year2: row.year2_value,
       year3: row.year3_value,
       year4: row.year4_value,
-    }))
-  );
+    });
+  }
+
+  return {
+    farm1: normalizeSowingTableRows(grouped.farm1),
+    farm2: normalizeSowingTableRows(grouped.farm2),
+  };
 }
 
-async function persistSowingTableRowsToMySql(rows) {
+async function persistSowingTableRowsToMySql(rowsByFarm) {
   if (!useMySql || !dbPool) return;
 
-  const normalizedRows = normalizeSowingTableRows(rows);
-  const values = normalizedRows.map((row) => [
-    row.field,
-    row.year1,
-    row.year2,
-    row.year3,
-    row.year4,
-  ]);
+  const normalizedTables = normalizeSowingTables(rowsByFarm);
+  const values = [];
+
+  for (const farmKey of Object.keys(normalizedTables)) {
+    for (const row of normalizedTables[farmKey].rows) {
+      values.push([
+        farmKey,
+        row.field,
+        row.year1,
+        row.year2,
+        row.year3,
+        row.year4,
+      ]);
+    }
+  }
 
   const conn = await dbPool.getConnection();
   try {
@@ -497,7 +525,7 @@ async function persistSowingTableRowsToMySql(rows) {
     if (values.length) {
       await conn.query(
         `INSERT INTO sowing_table_rows
-          (field_value, year1_value, year2_value, year3_value, year4_value)
+          (farm_key, field_value, year1_value, year2_value, year3_value, year4_value)
          VALUES ?`,
         [values]
       );
@@ -531,7 +559,7 @@ async function persistDbCache() {
         farmingFields: payload.farmingFields,
         farmingFieldListMessageId: payload.farmingFieldListMessageId,
         sowingSeasons: payload.sowingSeasons,
-        sowingTable: payload.sowingTable,
+        sowingTables: payload.sowingTables,
       });
     }
   } catch (err) {
@@ -660,15 +688,38 @@ async function initMySql() {
     `);
     await dbPool.query(`
       CREATE TABLE IF NOT EXISTS sowing_table_rows (
-        field_value VARCHAR(120) NOT NULL PRIMARY KEY,
+        farm_key VARCHAR(20) NOT NULL,
+        field_value VARCHAR(120) NOT NULL,
         year1_value VARCHAR(160) NOT NULL DEFAULT '',
         year2_value VARCHAR(160) NOT NULL DEFAULT '',
         year3_value VARCHAR(160) NOT NULL DEFAULT '',
         year4_value VARCHAR(160) NOT NULL DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ,PRIMARY KEY (farm_key, field_value)
       )
     `);
+    try {
+      const [farmKeyColumns] = await dbPool.query(`
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'sowing_table_rows'
+          AND COLUMN_NAME = 'farm_key'
+      `);
+
+      if (!farmKeyColumns.length) {
+        await dbPool.query(
+          "ALTER TABLE sowing_table_rows ADD COLUMN farm_key VARCHAR(20) NOT NULL DEFAULT 'farm2' FIRST"
+        );
+        await dbPool.query('ALTER TABLE sowing_table_rows DROP PRIMARY KEY');
+        await dbPool.query(
+          'ALTER TABLE sowing_table_rows ADD PRIMARY KEY (farm_key, field_value)'
+        );
+      }
+    } catch (err) {
+      console.log('SOWING TABLE SCHEMA MIGRATION ERROR:', err.message);
+    }
 
     const row = await readSharedBotConfigRow();
 
@@ -692,14 +743,21 @@ async function initMySql() {
     if (sqlSowingTableRows) {
       dbCache = mergeDbData({
         ...dbCache,
-        sowingTable: {
-          ...(dbCache.sowingTable || {}),
-          rows: sqlSowingTableRows,
+        sowingTables: {
+          ...(dbCache.sowingTables || {}),
+          farm1: {
+            ...((dbCache.sowingTables || {}).farm1 || {}),
+            rows: sqlSowingTableRows.farm1 || [],
+          },
+          farm2: {
+            ...((dbCache.sowingTables || {}).farm2 || {}),
+            rows: sqlSowingTableRows.farm2 || [],
+          },
         },
       });
       fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
-    } else if (dbCache.sowingTable?.rows?.length) {
-      await persistSowingTableRowsToMySql(dbCache.sowingTable.rows);
+    } else if ((dbCache.sowingTables?.farm1?.rows?.length || 0) + (dbCache.sowingTables?.farm2?.rows?.length || 0) > 0) {
+      await persistSowingTableRowsToMySql(dbCache.sowingTables);
     }
     await migrateLegacyTicketBlacklist();
     setInterval(() => {
@@ -719,9 +777,16 @@ async function initMySql() {
           if (!rows) return;
           dbCache = mergeDbData({
             ...dbCache,
-            sowingTable: {
-              ...(dbCache.sowingTable || {}),
-              rows,
+            sowingTables: {
+              ...(dbCache.sowingTables || {}),
+              farm1: {
+                ...((dbCache.sowingTables || {}).farm1 || {}),
+                rows: rows.farm1 || [],
+              },
+              farm2: {
+                ...((dbCache.sowingTables || {}).farm2 || {}),
+                rows: rows.farm2 || [],
+              },
             },
           });
           fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
@@ -987,10 +1052,37 @@ function normalizeSowingTable(rawTable) {
   );
 
   return {
-    channelId: String(data.channelId || SOWING_TABLE_CHANNEL_ID).trim() || SOWING_TABLE_CHANNEL_ID,
+    channelId: String(data.channelId || '').trim(),
     messageId: data.messageId ? String(data.messageId) : null,
     yearLabels: labels,
     rows: normalizeSowingTableRows(data.rows),
+  };
+}
+
+function normalizeSowingTables(rawTables) {
+  const base = JSON.parse(JSON.stringify(DEFAULT_SOWING_TABLES));
+
+  if (!rawTables || typeof rawTables !== 'object' || Array.isArray(rawTables)) {
+    // Backward compatibility: old single table becomes Farma 2 table.
+    return {
+      farm1: normalizeSowingTable(base.farm1),
+      farm2: normalizeSowingTable({
+        ...base.farm2,
+        ...(rawTables && typeof rawTables === 'object' ? rawTables : {}),
+      }),
+    };
+  }
+
+  return {
+    farm1: normalizeSowingTable({
+      ...base.farm1,
+      ...(rawTables.farm1 || {}),
+    }),
+    farm2: normalizeSowingTable({
+      ...base.farm2,
+      ...(rawTables.farm2 || {}),
+      ...(!rawTables.farm1 && !rawTables.farm2 ? rawTables : {}),
+    }),
   };
 }
 
@@ -1184,18 +1276,31 @@ async function updateFarmingFieldsEmbed(guild) {
   saveDb(data);
 }
 
-function getSowingTableState() {
+function getSowingTableState(farmKey) {
   const data = loadDb();
-  return normalizeSowingTable(data.sowingTable);
+  const tables = normalizeSowingTables(data.sowingTables || data.sowingTable);
+  return normalizeSowingTable(tables[farmKey] || DEFAULT_SOWING_TABLES[farmKey] || DEFAULT_SOWING_TABLE);
 }
 
-function saveSowingTableState(nextState) {
+function saveSowingTableState(farmKey, nextState) {
   const data = loadDb();
-  data.sowingTable = normalizeSowingTable(nextState);
+  const tables = normalizeSowingTables(data.sowingTables || data.sowingTable);
+  tables[farmKey] = normalizeSowingTable({
+    ...(DEFAULT_SOWING_TABLES[farmKey] || DEFAULT_SOWING_TABLE),
+    ...nextState,
+  });
+  data.sowingTables = tables;
+  delete data.sowingTable;
   saveDb(data);
-  persistSowingTableRowsToMySql(data.sowingTable.rows).catch((err) => {
+  persistSowingTableRowsToMySql(tables).catch((err) => {
     console.log('SOWING TABLE SAVE ERROR:', err.message);
   });
+}
+
+function resolveSowingTableFarmKey(channelId) {
+  return (
+    Object.entries(SOWING_TABLE_CHANNEL_IDS).find(([, id]) => id === channelId)?.[0] || null
+  );
 }
 
 function buildSowingTableControlRow() {
@@ -1294,30 +1399,32 @@ function buildSowingTableImageBuffer(tableState) {
   return canvas.toBuffer('image/png');
 }
 
-function buildSowingTableMessageContent(tableState) {
+function buildSowingTableMessageContent(tableState, farmKey) {
+  const farm = getFarmConfig(farmKey);
   return [
-    '📋 **Nova Tablica Sjetve**',
+    `📋 **Tablica Sjetve - ${farm.label}**`,
     'Pregled i uređivanje sjetvenog plana direktno iz Discorda.',
     `Ukupno redova: **${tableState.rows.length}**`,
   ].join('\n');
 }
 
-async function updateSowingTableMessage(guild) {
+async function updateSowingTableMessage(guild, farmKey) {
   if (!guild) return null;
 
-  const tableState = getSowingTableState();
+  const tableState = getSowingTableState(farmKey);
   if (!tableState.channelId) return null;
 
   const channel = await guild.channels.fetch(tableState.channelId).catch(() => null);
   if (!channel) return null;
 
-  const content = buildSowingTableMessageContent(tableState);
+  const content = buildSowingTableMessageContent(tableState, farmKey);
   const controls = buildSowingTableControlRow();
   const attachment = new AttachmentBuilder(buildSowingTableImageBuffer(tableState), {
     name: 'sowing-table.png',
   });
   const data = loadDb();
-  const nextState = normalizeSowingTable(data.sowingTable);
+  const nextTables = normalizeSowingTables(data.sowingTables || data.sowingTable);
+  const nextState = normalizeSowingTable(nextTables[farmKey] || tableState);
 
   let message = null;
   if (tableState.messageId) {
@@ -1332,7 +1439,7 @@ async function updateSowingTableMessage(guild) {
           (msg) =>
             msg.author?.id === client.user?.id &&
             typeof msg.content === 'string' &&
-            msg.content.startsWith('📋 **Nova Tablica Sjetve**')
+            msg.content.startsWith(`📋 **Tablica Sjetve - ${getFarmConfig(farmKey).label}**`)
         )
         .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
 
@@ -1363,7 +1470,7 @@ async function updateSowingTableMessage(guild) {
 
   nextState.channelId = channel.id;
   nextState.messageId = message.id;
-  saveSowingTableState(nextState);
+  saveSowingTableState(farmKey, nextState);
   return message;
 }
 
@@ -2790,7 +2897,8 @@ client.once('ready', async () => {
       await updateFarmingFieldsEmbed(guild);
       await updateFarmingTaskPanel(guild, 'farm1');
       await updateFarmingTaskPanel(guild, 'farm2');
-      await updateSowingTableMessage(guild);
+      await updateSowingTableMessage(guild, 'farm1');
+      await updateSowingTableMessage(guild, 'farm2');
       console.log("🌾 Sezona Sjetve — embed obnovljen pri startu bota.");
     }
   } catch (err) {
@@ -3826,16 +3934,19 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
         });
       }
 
-      const state = getSowingTableState();
-      saveSowingTableState({
-        ...state,
-        channelId: SOWING_TABLE_CHANNEL_ID,
-        messageId: state.channelId === SOWING_TABLE_CHANNEL_ID ? state.messageId : null,
+      saveSowingTableState('farm1', {
+        ...getSowingTableState('farm1'),
+        channelId: SOWING_TABLE_CHANNEL_IDS.farm1,
+      });
+      saveSowingTableState('farm2', {
+        ...getSowingTableState('farm2'),
+        channelId: SOWING_TABLE_CHANNEL_IDS.farm2,
       });
 
-      await updateSowingTableMessage(interaction.guild);
+      await updateSowingTableMessage(interaction.guild, 'farm1');
+      await updateSowingTableMessage(interaction.guild, 'farm2');
       await interaction.reply({
-        content: `✅ Tablica sjetve je postavljena ili osvježena u kanalu <#${SOWING_TABLE_CHANNEL_ID}>.`,
+        content: `✅ Tablice sjetve su postavljene ili osvježene u kanalima <#${SOWING_TABLE_CHANNEL_IDS.farm1}> i <#${SOWING_TABLE_CHANNEL_IDS.farm2}>.`,
         ephemeral: true,
       });
       scheduleInteractionReplyDeletion(interaction, 2000);
@@ -4473,10 +4584,12 @@ if (interaction.commandName === 'update-field') {
         });
       }
 
+      const farmKey = resolveSowingTableFarmKey(interaction.channelId) || 'farm2';
+
       if (interaction.customId === 'sowing_table_refresh') {
-        await updateSowingTableMessage(interaction.guild);
+        await updateSowingTableMessage(interaction.guild, farmKey);
         await interaction.reply({
-          content: '✅ Tablica sjetve je osvježena.',
+          content: `✅ Tablica sjetve za ${getFarmConfig(farmKey).label} je osvježena.`,
           ephemeral: true,
         });
         scheduleInteractionReplyDeletion(interaction, 1500);
@@ -4538,7 +4651,7 @@ if (interaction.commandName === 'update-field') {
       }
 
       if (interaction.customId === 'sowing_table_years') {
-        const state = getSowingTableState();
+        const state = getSowingTableState(farmKey);
         const modal = new ModalBuilder()
           .setCustomId('sowing_table_years_modal')
           .setTitle('Promijeni nazive godina');
@@ -5515,7 +5628,8 @@ if (!task.cropName) {
         });
       }
 
-      const state = getSowingTableState();
+      const farmKey = resolveSowingTableFarmKey(interaction.channelId) || 'farm2';
+      const state = getSowingTableState(farmKey);
       const rows = [...state.rows];
 
       if (interaction.customId === 'sowing_table_add_modal') {
@@ -5543,13 +5657,13 @@ if (!task.cropName) {
           year4: interaction.fields.getTextInputValue('year4').trim(),
         });
 
-        saveSowingTableState({
+        saveSowingTableState(farmKey, {
           ...state,
           rows,
         });
-        await updateSowingTableMessage(interaction.guild);
+        await updateSowingTableMessage(interaction.guild, farmKey);
         await interaction.reply({
-          content: `✅ Red za polje **${field}** je dodan u tablicu.`,
+          content: `✅ Red za polje **${field}** je dodan u tablicu za ${getFarmConfig(farmKey).label}.`,
           ephemeral: true,
         });
         scheduleInteractionReplyDeletion(interaction, 1800);
@@ -5575,13 +5689,13 @@ if (!task.cropName) {
           year4: interaction.fields.getTextInputValue('year4').trim(),
         };
 
-        saveSowingTableState({
+        saveSowingTableState(farmKey, {
           ...state,
           rows,
         });
-        await updateSowingTableMessage(interaction.guild);
+        await updateSowingTableMessage(interaction.guild, farmKey);
         await interaction.reply({
-          content: `✅ Red za polje **${field}** je ažuriran.`,
+          content: `✅ Red za polje **${field}** je ažuriran za ${getFarmConfig(farmKey).label}.`,
           ephemeral: true,
         });
         scheduleInteractionReplyDeletion(interaction, 1800);
@@ -5593,13 +5707,13 @@ if (!task.cropName) {
           interaction.fields.getTextInputValue(`year_label_${index}`).trim() || `${index} GOD`
         );
 
-        saveSowingTableState({
+        saveSowingTableState(farmKey, {
           ...state,
           yearLabels,
         });
-        await updateSowingTableMessage(interaction.guild);
+        await updateSowingTableMessage(interaction.guild, farmKey);
         await interaction.reply({
-          content: '✅ Nazivi stupaca su ažurirani.',
+          content: `✅ Nazivi stupaca su ažurirani za ${getFarmConfig(farmKey).label}.`,
           ephemeral: true,
         });
         scheduleInteractionReplyDeletion(interaction, 1800);
@@ -5617,13 +5731,13 @@ if (!task.cropName) {
           });
         }
 
-        saveSowingTableState({
+        saveSowingTableState(farmKey, {
           ...state,
           rows: nextRows,
         });
-        await updateSowingTableMessage(interaction.guild);
+        await updateSowingTableMessage(interaction.guild, farmKey);
         await interaction.reply({
-          content: `🗑️ Red za polje **${field}** je obrisan.`,
+          content: `🗑️ Red za polje **${field}** je obrisan iz ${getFarmConfig(farmKey).label}.`,
           ephemeral: true,
         });
         scheduleInteractionReplyDeletion(interaction, 1800);
