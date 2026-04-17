@@ -23,6 +23,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ModalBuilder,
+  LabelBuilder,
   TextInputBuilder,
   TextInputStyle,
   REST,
@@ -877,6 +878,15 @@ function buildTaskFieldSelectionRows(fields, farmKey) {
   }
 
   return rows;
+}
+
+function getTaskPriorities() {
+  return {
+    hitno: { label: '🔴 HITNO', value: 4, color: '#ff0000' },
+    visok: { label: '🟠 Visok', value: 3, color: '#ffa500' },
+    srednji: { label: '🟡 Srednji', value: 2, color: '#ffd000' },
+    nizak: { label: '🟢 Nizak', value: 1, color: '#3ba55d' },
+  };
 }
 
 // helper: spremi polja u db.json
@@ -4527,12 +4537,7 @@ if (interaction.customId.startsWith('task_priority_')) {
     });
   }
 
-  const priorities = {
-    hitno:   { label: '🔴 HITNO', value: 4, color: '#ff0000' },
-    visok:   { label: '🟠 Visok', value: 3, color: '#ffa500' },
-    srednji: { label: '🟡 Srednji', value: 2, color: '#ffd000' },
-    nizak:   { label: '🟢 Nizak', value: 1, color: '#3ba55d' },
-  };
+  const priorities = getTaskPriorities();
 
   const key = interaction.customId.replace('task_priority_', '');
   const prio = priorities[key];
@@ -4694,8 +4699,24 @@ if (interaction.customId.startsWith('task_priority_')) {
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
-      const row = new ActionRowBuilder().addComponents(input);
-      modal.addComponents(row);
+      const prioritySelect = new StringSelectMenuBuilder()
+        .setCustomId('task_priority_select')
+        .setPlaceholder('Odaberi prioritet')
+        .addOptions(
+          { label: 'HITNO', value: 'hitno', emoji: '🔴' },
+          { label: 'Visok', value: 'visok', emoji: '🟠' },
+          { label: 'Srednji', value: 'srednji', emoji: '🟡' },
+          { label: 'Nizak', value: 'nizak', emoji: '🟢' }
+        );
+
+      modal.addComponents(
+        new LabelBuilder()
+          .setLabel('Što se sije? (npr. kukuruz, ječam...)')
+          .setTextInputComponent(input),
+        new LabelBuilder()
+          .setLabel('Prioritet')
+          .setStringSelectMenuComponent(prioritySelect)
+      );
 
       await interaction.showModal(modal);
       return;
@@ -4723,8 +4744,24 @@ if (interaction.customId.startsWith('task_priority_')) {
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
-      const row = new ActionRowBuilder().addComponents(input);
-      modal.addComponents(row);
+      const prioritySelect = new StringSelectMenuBuilder()
+        .setCustomId('task_priority_select')
+        .setPlaceholder('Odaberi prioritet')
+        .addOptions(
+          { label: 'HITNO', value: 'hitno', emoji: '🔴' },
+          { label: 'Visok', value: 'visok', emoji: '🟠' },
+          { label: 'Srednji', value: 'srednji', emoji: '🟡' },
+          { label: 'Nizak', value: 'nizak', emoji: '🟢' }
+        );
+
+      modal.addComponents(
+        new LabelBuilder()
+          .setLabel('Što se kombajnira? (npr. pšenica, soja...)')
+          .setTextInputComponent(input),
+        new LabelBuilder()
+          .setLabel('Prioritet')
+          .setStringSelectMenuComponent(prioritySelect)
+      );
 
       await interaction.showModal(modal);
       return;
@@ -5222,46 +5259,42 @@ if (
       }
 
       const seedName = interaction.fields.getTextInputValue('seed_name');
+      const priorityKey =
+        interaction.fields.getStringSelectValues('task_priority_select')?.[0];
+      const priorities = getTaskPriorities();
+      const prio = priorities[priorityKey];
       const farm = getFarmConfig(current.farmKey || 'farm1');
-      current.jobKey = 'sijanje';
-      current.jobName = 'Sijanje';
-      current.cropName = seedName;
-      delete current.harvestInfo;
-      activeTasks.set(interaction.user.id, current);
+      if (!prio) {
+        return interaction.reply({
+          content: '⚠️ Moraš odabrati prioritet.',
+          ephemeral: true,
+        });
+      }
 
-      const embed = new EmbedBuilder()
-        .setColor('#5865f2')
-        .setTitle('🚦 Odaberi prioritet posla')
-        .setDescription(
-          `🏡 **Farma:** ${farm.label}\n` +
-          `🚜 **Polje:** ${current.field}\n` +
-          `🛠️ **Posao:** ${current.jobName}\n` +
-          `🌱 **Kultura:** ${seedName}\n\n` +
-          'Odaberi prioritet:'
-        );
+      saveFarmingTask({
+        taskId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+        farmKey: farm.key,
+        farmLabel: farm.label,
+        field: current.field,
+        jobKey: 'sijanje',
+        jobName: 'Sijanje',
+        cropName: seedName,
+        priority: priorityKey,
+        priorityLabel: prio.label,
+        priorityValue: prio.value,
+        status: 'open',
+        fromFs: false,
+        channelId: farm.jobChannelId,
+        createdBy: interaction.user.id,
+        createdAt: new Date().toISOString(),
+      });
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('task_priority_hitno')
-          .setLabel('🔴 HITNO')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId('task_priority_visok')
-          .setLabel('🟠 Visok')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('task_priority_srednji')
-          .setLabel('🟡 Srednji')
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId('task_priority_nizak')
-          .setLabel('🟢 Nizak')
-          .setStyle(ButtonStyle.Success)
-      );
+      await handleNewSowingTask(interaction.guild, current.field, seedName);
+      await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
+      activeTasks.delete(interaction.user.id);
 
       await interaction.reply({
-        embeds: [embed],
-        components: [row],
+        content: `✅ Zadatak za sijanje je kreiran s prioritetom ${prio.label}.`,
         ephemeral: true,
       });
       return;
@@ -5396,46 +5429,41 @@ if (
       }
 
       const harvestInfo = interaction.fields.getTextInputValue('harvest_info');
+      const priorityKey =
+        interaction.fields.getStringSelectValues('task_priority_select')?.[0];
+      const priorities = getTaskPriorities();
+      const prio = priorities[priorityKey];
       const farm = getFarmConfig(current.farmKey || 'farm1');
-      current.jobKey = 'kombajniranje';
-      current.jobName = 'Kombajniranje';
-      current.harvestInfo = harvestInfo;
-      delete current.cropName;
-      activeTasks.set(interaction.user.id, current);
+      if (!prio) {
+        return interaction.reply({
+          content: '⚠️ Moraš odabrati prioritet.',
+          ephemeral: true,
+        });
+      }
 
-      const embed = new EmbedBuilder()
-        .setColor('#5865f2')
-        .setTitle('🚦 Odaberi prioritet posla')
-        .setDescription(
-          `🏡 **Farma:** ${farm.label}\n` +
-          `🚜 **Polje:** ${current.field}\n` +
-          `🛠️ **Posao:** ${current.jobName}\n` +
-          `📋 **Detalji:** ${harvestInfo}\n\n` +
-          'Odaberi prioritet:'
-        );
+      saveFarmingTask({
+        taskId: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+        farmKey: farm.key,
+        farmLabel: farm.label,
+        field: current.field,
+        jobKey: 'kombajniranje',
+        jobName: 'Kombajniranje',
+        harvestInfo,
+        priority: priorityKey,
+        priorityLabel: prio.label,
+        priorityValue: prio.value,
+        status: 'open',
+        fromFs: false,
+        channelId: farm.jobChannelId,
+        createdBy: interaction.user.id,
+        createdAt: new Date().toISOString(),
+      });
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('task_priority_hitno')
-          .setLabel('🔴 HITNO')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId('task_priority_visok')
-          .setLabel('🟠 Visok')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('task_priority_srednji')
-          .setLabel('🟡 Srednji')
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId('task_priority_nizak')
-          .setLabel('🟢 Nizak')
-          .setStyle(ButtonStyle.Success)
-      );
+      await updateFarmingTaskPanel(interaction.guild, farm.key).catch(() => null);
+      activeTasks.delete(interaction.user.id);
 
       await interaction.reply({
-        embeds: [embed],
-        components: [row],
+        content: `✅ Zadatak za kombajniranje je kreiran s prioritetom ${prio.label}.`,
         ephemeral: true,
       });
       return;
