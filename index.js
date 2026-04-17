@@ -1225,12 +1225,12 @@ function buildSowingTableControlRow() {
 
 function drawTableCellText(ctx, value, x, y, width, height, options = {}) {
   const text = String(value || '').trim();
-  const paddingX = options.paddingX ?? 10;
-  const baselineY = y + height / 2 + 7;
+  const paddingX = options.paddingX ?? 14;
+  const baselineY = y + height / 2 + 9;
   const maxWidth = width - paddingX * 2;
 
   ctx.fillStyle = options.color || '#ffffff';
-  ctx.font = options.font || `18px "${LOCAL_SOWING_TABLE_FONT_FAMILY}"`;
+  ctx.font = options.font || `26px "${LOCAL_SOWING_TABLE_FONT_FAMILY}"`;
   ctx.textAlign = options.align || 'left';
   ctx.textBaseline = 'middle';
 
@@ -1245,14 +1245,14 @@ function drawTableCellText(ctx, value, x, y, width, height, options = {}) {
 
 function buildSowingTableImageBuffer(tableState) {
   const columns = [
-    { key: 'field', label: 'POLJE', width: 220 },
-    { key: 'year1', label: tableState.yearLabels[0], width: 220 },
-    { key: 'year2', label: tableState.yearLabels[1], width: 220 },
-    { key: 'year3', label: tableState.yearLabels[2], width: 220 },
-    { key: 'year4', label: tableState.yearLabels[3], width: 220 },
+    { key: 'field', label: 'POLJE', width: 320 },
+    { key: 'year1', label: tableState.yearLabels[0], width: 320 },
+    { key: 'year2', label: tableState.yearLabels[1], width: 320 },
+    { key: 'year3', label: tableState.yearLabels[2], width: 320 },
+    { key: 'year4', label: tableState.yearLabels[3], width: 320 },
   ];
-  const rowHeight = 40;
-  const headerHeight = 44;
+  const rowHeight = 58;
+  const headerHeight = 64;
   const tableRows = tableState.rows.length
     ? tableState.rows
     : [{ field: '—', year1: 'Nema podataka', year2: '', year3: '', year4: '' }];
@@ -1273,7 +1273,7 @@ function buildSowingTableImageBuffer(tableState) {
     ctx.fillRect(currentX, 0, column.width, headerHeight);
     ctx.strokeRect(currentX, 0, column.width, headerHeight);
     drawTableCellText(ctx, column.label, currentX, 0, column.width, headerHeight, {
-      font: `bold 18px "${LOCAL_SOWING_TABLE_FONT_FAMILY}"`,
+      font: `bold 28px "${LOCAL_SOWING_TABLE_FONT_FAMILY}"`,
     });
     currentX += column.width;
   }
