@@ -30,6 +30,7 @@ const {
   AttachmentBuilder,
   REST,
   Routes,
+  AuditLogEvent,
 } = require('discord.js');
 
 const commands = require('./commands');
@@ -123,6 +124,9 @@ const PLAYER_ROLE_ID = '1487449859182039060';
 const FS_WEBHOOK_SECRET = process.env.FS_WEBHOOK_SECRET;
 const BLACKLIST_LOG_CHANNEL_ID = '1483576763811364935';
 const BLACKLIST_ROLE_ID = '1483578948611866714';
+const DISCORD_BAN_PANEL_CHANNEL_ID = '1487452042481106994';
+const DISCORD_BAN_PANEL_TITLE = 'Discord Ban Lista';
+const DISCORD_BAN_PANEL_PAGE_SIZE = 10;
 
 // =====================
 //  "DB" PREKO JSON FAJLA (za dashboard: welcome/logging/embeds/tickets)
@@ -263,6 +267,11 @@ function getDefaultData() {
     ticketBlacklist: [],
     ticketSubmissions: [],
     ticketRecords: [],
+    discordBanPanel: {
+      channelId: DISCORD_BAN_PANEL_CHANNEL_ID,
+      messageId: null,
+    },
+    discordBanRecords: [],
     ticketSystem: JSON.parse(JSON.stringify(DEFAULT_TICKET_SYSTEM)),
     // 🔹 ovdje ćemo spremati aktivne/završene FS zadatke (da ih možemo naći po polju)
     farmingTasks: [],
@@ -305,6 +314,13 @@ function mergeDbData(raw) {
     ticketRecords: Array.isArray(data.ticketRecords)
       ? data.ticketRecords
       : base.ticketRecords,
+    discordBanPanel: {
+      ...base.discordBanPanel,
+      ...(data.discordBanPanel || {}),
+    },
+    discordBanRecords: Array.isArray(data.discordBanRecords)
+      ? data.discordBanRecords
+      : base.discordBanRecords,
     ticketSystem: {
       ...base.ticketSystem,
       ...(data.ticketSystem || {}),
@@ -379,6 +395,13 @@ function mergeRemoteSharedConfigIntoCache(remoteData) {
     ticketBlacklist: Array.isArray(dbCache.ticketBlacklist) ? dbCache.ticketBlacklist : [],
     ticketSubmissions: Array.isArray(dbCache.ticketSubmissions) ? dbCache.ticketSubmissions : [],
     ticketRecords: Array.isArray(dbCache.ticketRecords) ? dbCache.ticketRecords : [],
+    discordBanPanel: {
+      ...getDefaultData().discordBanPanel,
+      ...(mergedRemote.discordBanPanel || {}),
+    },
+    discordBanRecords: Array.isArray(mergedRemote.discordBanRecords)
+      ? mergedRemote.discordBanRecords
+      : [],
     farmingTasks: Array.isArray(mergedRemote.farmingTasks) ? mergedRemote.farmingTasks : [],
     farmingTaskPanelMessageIds: {
       ...getDefaultData().farmingTaskPanelMessageIds,
@@ -540,6 +563,146 @@ async function persistSowingTableRowsToMySql(rowsByFarm) {
   }
 }
 
+async function readDiscordBanRecordsFromMySql(guildIdValue = null) {
+  if (!useMySql || !dbPool) return null;
+
+  const params = [];
+  let query = `
+    SELECT guild_id, user_id, user_tag, reason, banned_at, executor_id, executor_tag
+    FROM discord_ban_records
+  `;
+
+  if (guildIdValue) {
+    query += ' WHERE guild_id = ?';
+    params.push(String(guildIdValue || guildId || ''));
+  }
+
+  query += ' ORDER BY banned_at DESC, user_tag ASC, user_id ASC';
+
+  const [rows] = await dbPool.query(query, params);
+  return rows.map((row) => ({
+    guildId: String(row.guild_id || ''),
+    userId: String(row.user_id || ''),
+    userTag: String(row.user_tag || ''),
+    reason: String(row.reason || '').trim(),
+    bannedAt: row.banned_at ? new Date(row.banned_at).toISOString() : null,
+    executorId: row.executor_id ? String(row.executor_id) : '',
+    executorTag: String(row.executor_tag || ''),
+  }));
+}
+
+async function upsertDiscordBanRecordToMySql(entry) {
+  if (!useMySql || !dbPool || !entry?.userId) return;
+
+  await dbPool.query(
+    `INSERT INTO discord_ban_records
+      (guild_id, user_id, user_tag, reason, banned_at, executor_id, executor_tag)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+      user_tag = VALUES(user_tag),
+      reason = VALUES(reason),
+      banned_at = VALUES(banned_at),
+      executor_id = VALUES(executor_id),
+      executor_tag = VALUES(executor_tag)`,
+    [
+      String(entry.guildId || guildId || ''),
+      String(entry.userId || ''),
+      String(entry.userTag || ''),
+      String(entry.reason || '').trim(),
+      entry.bannedAt ? new Date(entry.bannedAt) : null,
+      entry.executorId ? String(entry.executorId) : null,
+      String(entry.executorTag || ''),
+    ]
+  );
+}
+
+async function removeDiscordBanRecordFromMySql(guildIdValue, userId) {
+  if (!useMySql || !dbPool) return false;
+
+  const [result] = await dbPool.query(
+    'DELETE FROM discord_ban_records WHERE guild_id = ? AND user_id = ?',
+    [String(guildIdValue || guildId || ''), String(userId || '')]
+  );
+  return result.affectedRows > 0;
+}
+
+async function replaceDiscordBanRecordsForGuildInMySql(guildIdValue, records) {
+  if (!useMySql || !dbPool) return;
+
+  const normalizedGuildId = String(guildIdValue || guildId || '');
+  const conn = await dbPool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+    await conn.query('DELETE FROM discord_ban_records WHERE guild_id = ?', [normalizedGuildId]);
+
+    const values = (Array.isArray(records) ? records : [])
+      .filter((record) => record?.userId)
+      .map((record) => [
+        normalizedGuildId,
+        String(record.userId || ''),
+        String(record.userTag || ''),
+        String(record.reason || '').trim(),
+        record.bannedAt ? new Date(record.bannedAt) : null,
+        record.executorId ? String(record.executorId) : null,
+        String(record.executorTag || ''),
+      ]);
+
+    if (values.length) {
+      await conn.query(
+        `INSERT INTO discord_ban_records
+          (guild_id, user_id, user_tag, reason, banned_at, executor_id, executor_tag)
+         VALUES ?`,
+        [values]
+      );
+    }
+
+    await conn.commit();
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+async function readDiscordBanPanelStateFromMySql(guildIdValue) {
+  if (!useMySql || !dbPool) return null;
+
+  const [rows] = await dbPool.query(
+    `SELECT guild_id, channel_id, message_id
+     FROM discord_ban_panel_state
+     WHERE guild_id = ?
+     LIMIT 1`,
+    [String(guildIdValue || guildId || '')]
+  );
+
+  if (!rows.length) return null;
+
+  return {
+    guildId: String(rows[0].guild_id || ''),
+    channelId: String(rows[0].channel_id || DISCORD_BAN_PANEL_CHANNEL_ID),
+    messageId: rows[0].message_id ? String(rows[0].message_id) : null,
+  };
+}
+
+async function saveDiscordBanPanelStateToMySql(state) {
+  if (!useMySql || !dbPool) return;
+
+  await dbPool.query(
+    `INSERT INTO discord_ban_panel_state (guild_id, channel_id, message_id)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+      channel_id = VALUES(channel_id),
+      message_id = VALUES(message_id)`,
+    [
+      String(state?.guildId || guildId || ''),
+      String(state?.channelId || DISCORD_BAN_PANEL_CHANNEL_ID),
+      state?.messageId ? String(state.messageId) : null,
+    ]
+  );
+}
+
 async function persistDbCache() {
   if (!useMySql || !dbPool) return;
 
@@ -554,6 +717,8 @@ async function persistDbCache() {
         ticketBlacklist: payload.ticketBlacklist,
         ticketSubmissions: payload.ticketSubmissions,
         ticketRecords: payload.ticketRecords,
+        discordBanPanel: payload.discordBanPanel,
+        discordBanRecords: payload.discordBanRecords,
         farmingTasks: payload.farmingTasks,
         farmingTaskPanelMessageIds: payload.farmingTaskPanelMessageIds,
         farmingFields: payload.farmingFields,
@@ -699,6 +864,29 @@ async function initMySql() {
         ,PRIMARY KEY (farm_key, field_value)
       )
     `);
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS discord_ban_records (
+        guild_id VARCHAR(40) NOT NULL,
+        user_id VARCHAR(40) NOT NULL,
+        user_tag VARCHAR(120) NULL,
+        reason TEXT NULL,
+        banned_at TIMESTAMP NULL DEFAULT NULL,
+        executor_id VARCHAR(40) NULL,
+        executor_tag VARCHAR(120) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, user_id),
+        KEY idx_discord_ban_records_guild_banned (guild_id, banned_at)
+      )
+    `);
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS discord_ban_panel_state (
+        guild_id VARCHAR(40) NOT NULL PRIMARY KEY,
+        channel_id VARCHAR(40) NOT NULL,
+        message_id VARCHAR(40) NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
     try {
       const [farmKeyColumns] = await dbPool.query(`
         SELECT COLUMN_NAME
@@ -721,6 +909,7 @@ async function initMySql() {
       console.log('SOWING TABLE SCHEMA MIGRATION ERROR:', err.message);
     }
 
+    useMySql = true;
     const row = await readSharedBotConfigRow();
 
     if (row) {
@@ -731,7 +920,6 @@ async function initMySql() {
       await persistDbCache();
     }
 
-    useMySql = true;
     const sqlFields = await readFarmingFieldsFromMySql();
     if (sqlFields) {
       dbCache.farmingFields = sqlFields;
@@ -760,6 +948,34 @@ async function initMySql() {
       await persistSowingTableRowsToMySql(dbCache.sowingTables);
     }
     await migrateLegacyTicketBlacklist();
+
+    const sqlDiscordBanRecords = await readDiscordBanRecordsFromMySql(guildId || '');
+    if (Array.isArray(sqlDiscordBanRecords) && sqlDiscordBanRecords.length) {
+      dbCache = mergeDbData({
+        ...dbCache,
+        discordBanRecords: sqlDiscordBanRecords,
+      });
+      fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
+    } else if (Array.isArray(dbCache.discordBanRecords) && dbCache.discordBanRecords.length) {
+      await replaceDiscordBanRecordsForGuildInMySql(guildId || '', dbCache.discordBanRecords);
+    }
+
+    const sqlDiscordBanPanelState = await readDiscordBanPanelStateFromMySql(guildId || '');
+    const nextDiscordBanPanelState = {
+      channelId: DISCORD_BAN_PANEL_CHANNEL_ID,
+      messageId: sqlDiscordBanPanelState?.messageId || dbCache.discordBanPanel?.messageId || null,
+    };
+    dbCache = mergeDbData({
+      ...dbCache,
+      discordBanPanel: nextDiscordBanPanelState,
+    });
+    fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
+    await saveDiscordBanPanelStateToMySql({
+      guildId: guildId || '',
+      ...nextDiscordBanPanelState,
+    });
+    await persistDbCache();
+
     setInterval(() => {
       refreshSharedBotConfigFromMySql(false).catch(() => {});
       readFarmingFieldsFromMySql()
@@ -955,7 +1171,421 @@ async function removeUserFromTicketBlacklist(guildIdValue, userId) {
   return removed;
 }
 
-// helper: vraća ticket config = default + ono što je u db.json
+// Discord ban panel helperi
+function canManageDiscordBans(member) {
+  if (!member?.permissions) return false;
+  return (
+    member.permissions.has(PermissionFlagsBits.BanMembers) ||
+    member.permissions.has(PermissionFlagsBits.ManageGuild)
+  );
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function truncateText(value, maxLength) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function getDiscordBanDisplayName(user, fallbackId = '') {
+  if (!user) {
+    return fallbackId ? `Nepoznat korisnik (${fallbackId})` : 'Nepoznat korisnik';
+  }
+
+  if (user.globalName && user.globalName !== user.username) {
+    return `${user.globalName} (@${user.username})`;
+  }
+
+  if (user.username) {
+    return `@${user.username}`;
+  }
+
+  return fallbackId ? `Nepoznat korisnik (${fallbackId})` : 'Nepoznat korisnik';
+}
+
+function formatDiscordBanTimestamp(value, style = 'f') {
+  const timestamp = new Date(value || 0).getTime();
+  if (!timestamp) return 'Nepoznato';
+  return `<t:${Math.floor(timestamp / 1000)}:${style}>`;
+}
+
+function getDiscordBanPanelState() {
+  const data = loadDb();
+  return {
+    channelId: DISCORD_BAN_PANEL_CHANNEL_ID,
+    messageId:
+      typeof data.discordBanPanel?.messageId === 'string' || data.discordBanPanel?.messageId === null
+        ? data.discordBanPanel.messageId
+        : null,
+  };
+}
+
+function getStoredDiscordBanRecords(guildIdValue) {
+  const normalizedGuildId = String(guildIdValue || guildId || '');
+  const data = loadDb();
+  const records = Array.isArray(data.discordBanRecords) ? data.discordBanRecords : [];
+
+  return records
+    .filter((record) => String(record.guildId || '') === normalizedGuildId)
+    .map((record) => ({
+      guildId: normalizedGuildId,
+      userId: String(record.userId || ''),
+      userTag: String(record.userTag || ''),
+      reason: String(record.reason || '').trim(),
+      bannedAt: record.bannedAt || null,
+      executorId: record.executorId ? String(record.executorId) : '',
+      executorTag: String(record.executorTag || ''),
+    }))
+    .filter((record) => record.userId);
+}
+
+async function upsertDiscordBanRecord(entry) {
+  if (!entry?.userId) return null;
+
+  const normalizedGuildId = String(entry.guildId || guildId || '');
+  const normalizedUserId = String(entry.userId);
+  const data = loadDb();
+  const records = Array.isArray(data.discordBanRecords) ? data.discordBanRecords : [];
+  const nextRecord = {
+    guildId: normalizedGuildId,
+    userId: normalizedUserId,
+    userTag: String(entry.userTag || ''),
+    reason: String(entry.reason || '').trim(),
+    bannedAt:
+      Object.prototype.hasOwnProperty.call(entry, 'bannedAt')
+        ? entry.bannedAt
+        : new Date().toISOString(),
+    executorId: entry.executorId ? String(entry.executorId) : '',
+    executorTag: String(entry.executorTag || ''),
+  };
+  const existingIndex = records.findIndex(
+    (record) =>
+      String(record.guildId || '') === normalizedGuildId &&
+      String(record.userId || '') === normalizedUserId
+  );
+
+  if (existingIndex >= 0) {
+    records[existingIndex] = {
+      ...records[existingIndex],
+      ...nextRecord,
+    };
+  } else {
+    records.push(nextRecord);
+  }
+
+  data.discordBanRecords = records;
+  saveDb(data);
+  await upsertDiscordBanRecordToMySql(nextRecord);
+  return nextRecord;
+}
+
+async function removeDiscordBanRecord(guildIdValue, userId) {
+  const normalizedGuildId = String(guildIdValue || guildId || '');
+  const normalizedUserId = String(userId || '');
+  const data = loadDb();
+  const records = Array.isArray(data.discordBanRecords) ? data.discordBanRecords : [];
+  const nextRecords = records.filter(
+    (record) =>
+      !(
+        String(record.guildId || '') === normalizedGuildId &&
+        String(record.userId || '') === normalizedUserId
+      )
+  );
+
+  if (nextRecords.length === records.length) {
+    return removeDiscordBanRecordFromMySql(normalizedGuildId, normalizedUserId);
+  }
+
+  data.discordBanRecords = nextRecords;
+  saveDb(data);
+  await removeDiscordBanRecordFromMySql(normalizedGuildId, normalizedUserId);
+  return true;
+}
+
+async function syncDiscordBanRecordsFromLiveBans(guild, liveBanCollection = null) {
+  if (!guild) return [];
+
+  const banCollection = liveBanCollection || (await guild.bans.fetch().catch(() => null));
+  if (!banCollection) return [];
+
+  const currentBans = Array.from(banCollection.values());
+  const activeUserIds = new Set(currentBans.map((ban) => String(ban.user.id)));
+  const data = loadDb();
+  const allRecords = Array.isArray(data.discordBanRecords) ? data.discordBanRecords : [];
+  const guildRecords = allRecords.filter((record) => String(record.guildId || '') === String(guild.id));
+  const otherRecords = allRecords.filter((record) => String(record.guildId || '') !== String(guild.id));
+  const mergedByUserId = new Map(
+    guildRecords
+      .filter((record) => record?.userId)
+      .map((record) => [String(record.userId), { ...record }])
+  );
+
+  for (const ban of currentBans) {
+    const userId = String(ban.user.id);
+    const existing = mergedByUserId.get(userId);
+
+    mergedByUserId.set(userId, {
+      guildId: guild.id,
+      userId,
+      userTag: existing?.userTag || getDiscordBanDisplayName(ban.user, userId),
+      reason: existing?.reason || String(ban.reason || '').trim(),
+      bannedAt:
+        Object.prototype.hasOwnProperty.call(existing || {}, 'bannedAt')
+          ? existing.bannedAt
+          : null,
+      executorId: existing?.executorId || '',
+      executorTag: existing?.executorTag || '',
+    });
+  }
+
+  const nextGuildRecords = Array.from(mergedByUserId.values()).filter((record) =>
+    activeUserIds.has(String(record.userId || ''))
+  );
+
+  data.discordBanRecords = [...otherRecords, ...nextGuildRecords];
+  saveDb(data);
+  await replaceDiscordBanRecordsForGuildInMySql(guild.id, nextGuildRecords);
+  return nextGuildRecords;
+}
+
+async function fetchMatchingBanAuditEntry(guild, userId) {
+  if (!guild || !userId) return null;
+
+  const auditLogs = await guild
+    .fetchAuditLogs({ type: AuditLogEvent.MemberBanAdd, limit: 6 })
+    .catch(() => null);
+  const entries = auditLogs ? Array.from(auditLogs.entries.values()) : [];
+  const now = Date.now();
+
+  return (
+    entries.find((entry) => {
+      if (String(entry.target?.id || '') !== String(userId)) return false;
+      return Math.abs(now - entry.createdTimestamp) <= 5 * 60 * 1000;
+    }) || null
+  );
+}
+
+async function getDiscordBanEntries(guild) {
+  if (!guild) return [];
+
+  const banCollection = await guild.bans.fetch().catch(() => null);
+  if (!banCollection) return [];
+
+  const storedRecords = getStoredDiscordBanRecords(guild.id);
+  const storedByUserId = new Map(storedRecords.map((record) => [record.userId, record]));
+
+  return Array.from(banCollection.values())
+    .map((ban) => {
+      const stored = storedByUserId.get(String(ban.user.id));
+      return {
+        userId: String(ban.user.id),
+        user: ban.user,
+        displayName: getDiscordBanDisplayName(ban.user, ban.user.id),
+        reason: String(ban.reason || stored?.reason || '').trim(),
+        bannedAt: stored?.bannedAt || null,
+        executorId: stored?.executorId || '',
+        executorTag: stored?.executorTag || '',
+      };
+    })
+    .sort((left, right) => {
+      const rightTime = new Date(right.bannedAt || 0).getTime();
+      const leftTime = new Date(left.bannedAt || 0).getTime();
+
+      if (rightTime !== leftTime) {
+        return rightTime - leftTime;
+      }
+
+      return left.displayName.localeCompare(right.displayName, 'hr');
+    });
+}
+
+function buildDiscordBanPanelEmbed(entries, page, selectedUserId) {
+  const totalPages = Math.max(1, Math.ceil(entries.length / DISCORD_BAN_PANEL_PAGE_SIZE));
+  const safePage = clampNumber(page, 0, totalPages - 1);
+  const startIndex = safePage * DISCORD_BAN_PANEL_PAGE_SIZE;
+  const pageEntries = entries.slice(startIndex, startIndex + DISCORD_BAN_PANEL_PAGE_SIZE);
+  const selectedIndex = entries.findIndex((entry) => entry.userId === selectedUserId);
+  const selectedEntry =
+    selectedIndex >= 0
+      ? entries[selectedIndex]
+      : pageEntries.length
+        ? pageEntries[0]
+        : null;
+
+  const listValue = pageEntries.length
+    ? pageEntries
+        .map((entry, index) => {
+          const reason = entry.reason ? truncateText(entry.reason, 55) : 'Bez razloga';
+          return `\`${startIndex + index + 1}.\` ${truncateText(entry.displayName, 45)}\nRazlog: ${reason}`;
+        })
+        .join('\n\n')
+    : '_Trenutno nema banovanih clanova._';
+
+  const embed = new EmbedBuilder()
+    .setColor(entries.length ? '#c0392b' : '#2ecc71')
+    .setTitle(DISCORD_BAN_PANEL_TITLE)
+    .setDescription(
+      'Ovaj panel se automatski osvjezava kad netko dobije ban ili unban.\n' +
+        'Odaberi korisnika iz izbornika ispod za detalje i brzi unban.'
+    )
+    .addFields({
+      name: `Banovani clanovi (${entries.length})`,
+      value: listValue,
+    })
+    .setFooter({
+      text: `Stranica ${safePage + 1}/${totalPages} | Panel prati Discord ban listu`,
+    })
+    .setTimestamp();
+
+  if (selectedEntry) {
+    embed.addFields({
+      name: 'Detalji odabranog bana',
+      value: [
+        `Korisnik: <@${selectedEntry.userId}>`,
+        `ID: \`${selectedEntry.userId}\``,
+        `Banan: ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'f')}`,
+        `Kada: ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'R')}`,
+        `Banao: ${selectedEntry.executorId ? `<@${selectedEntry.executorId}>` : (selectedEntry.executorTag || 'Nepoznato')}`,
+        `Razlog: ${truncateText(selectedEntry.reason || 'Nema unesenog razloga.', 700)}`,
+      ].join('\n'),
+    });
+
+    if (selectedEntry.user?.displayAvatarURL) {
+      embed.setThumbnail(selectedEntry.user.displayAvatarURL({ size: 256 }));
+    }
+  }
+
+  return {
+    embed,
+    pageEntries,
+    safePage,
+    selectedUserId: selectedEntry?.userId || '',
+    totalPages,
+  };
+}
+
+function buildDiscordBanPanelComponents(entries, page, selectedUserId) {
+  const state = buildDiscordBanPanelEmbed(entries, page, selectedUserId);
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ban_panel:prev:${state.safePage}:${state.selectedUserId || 'none'}`)
+      .setLabel('Prethodna')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(state.safePage <= 0 || !entries.length),
+    new ButtonBuilder()
+      .setCustomId(`ban_panel:next:${state.safePage}:${state.selectedUserId || 'none'}`)
+      .setLabel('Sljedeca')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(state.safePage >= state.totalPages - 1 || !entries.length),
+    new ButtonBuilder()
+      .setCustomId(`ban_panel:refresh:${state.safePage}:${state.selectedUserId || 'none'}`)
+      .setLabel('Osvjezi')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`ban_panel:unban:${state.safePage}:${state.selectedUserId || 'none'}`)
+      .setLabel('Unban')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!state.selectedUserId)
+  );
+  const components = [row];
+
+  if (state.pageEntries.length) {
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(`ban_panel_select:${state.safePage}`)
+      .setPlaceholder('Odaberi banovanog clana za detalje')
+      .addOptions(
+        state.pageEntries.map((entry) => ({
+          label: truncateText(entry.displayName, 100),
+          description: truncateText(entry.reason || 'Bez unesenog razloga', 100),
+          value: entry.userId,
+          default: entry.userId === state.selectedUserId,
+        }))
+      );
+
+    components.push(new ActionRowBuilder().addComponents(menu));
+  }
+
+  return {
+    embeds: [state.embed],
+    components,
+    selectedUserId: state.selectedUserId,
+    safePage: state.safePage,
+  };
+}
+
+async function createDiscordBanPanelPayload(guild, options = {}) {
+  const entries = await getDiscordBanEntries(guild);
+  return buildDiscordBanPanelComponents(
+    entries,
+    Number.isFinite(options.page) ? options.page : Number(options.page || 0),
+    options.selectedUserId ? String(options.selectedUserId) : ''
+  );
+}
+
+async function updateDiscordBanPanel(guild, options = {}) {
+  if (!guild) return null;
+
+  const storedState = getDiscordBanPanelState();
+  const nextChannelId = DISCORD_BAN_PANEL_CHANNEL_ID;
+  if (!nextChannelId) return null;
+
+  const channel = await guild.channels.fetch(nextChannelId).catch(() => null);
+  if (!channel?.isTextBased?.()) return null;
+
+  await syncDiscordBanRecordsFromLiveBans(guild);
+  const payload = await createDiscordBanPanelPayload(guild, options);
+  const data = loadDb();
+  let message = null;
+
+  if (storedState.messageId) {
+    message = await channel.messages.fetch(storedState.messageId).catch(() => null);
+  }
+
+  if (!message) {
+    const recentMessages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+    if (recentMessages?.size) {
+      const matchingMessages = Array.from(recentMessages.values())
+        .filter(
+          (entry) =>
+            entry.author?.id === client.user?.id &&
+            entry.embeds?.[0]?.title === DISCORD_BAN_PANEL_TITLE
+        )
+        .sort((left, right) => right.createdTimestamp - left.createdTimestamp);
+
+      if (matchingMessages.length) {
+        const [primaryMessage, ...duplicates] = matchingMessages;
+        message = primaryMessage;
+        for (const duplicate of duplicates) {
+          await duplicate.delete().catch(() => {});
+        }
+      }
+    }
+  }
+
+  if (message) {
+    await message.edit(payload);
+  } else {
+    message = await channel.send(payload);
+  }
+
+  data.discordBanPanel = {
+    channelId: channel.id,
+    messageId: message.id,
+  };
+  saveDb(data);
+  await saveDiscordBanPanelStateToMySql({
+    guildId: guild.id,
+    channelId: channel.id,
+    messageId: message.id,
+  });
+  return message;
+}
+
+// helper: vraca ticket config = default + ono sto je u db.json
 function getTicketConfig() {
   const data = loadDb();
   const cfg = data.ticketSystem || {};
@@ -2874,6 +3504,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildMessages, // za messageCreate
   ],
 });
@@ -2899,6 +3530,7 @@ client.once('ready', async () => {
       await updateFarmingTaskPanel(guild, 'farm2');
       await updateSowingTableMessage(guild, 'farm1');
       await updateSowingTableMessage(guild, 'farm2');
+      await updateDiscordBanPanel(guild);
       console.log("🌾 Sezona Sjetve — embed obnovljen pri startu bota.");
     }
   } catch (err) {
@@ -2910,6 +3542,38 @@ client.once('ready', async () => {
 
 client.on('error', (err) => {
   console.error('❌ Client error:', err);
+});
+
+client.on('guildBanAdd', async (ban) => {
+  try {
+    const auditEntry = await fetchMatchingBanAuditEntry(ban.guild, ban.user.id);
+    await upsertDiscordBanRecord({
+      guildId: ban.guild.id,
+      userId: ban.user.id,
+      userTag: getDiscordBanDisplayName(ban.user, ban.user.id),
+      reason: String(ban.reason || auditEntry?.reason || '').trim(),
+      bannedAt: auditEntry?.createdAt?.toISOString?.() || new Date().toISOString(),
+      executorId: auditEntry?.executor?.id || '',
+      executorTag: auditEntry?.executor
+        ? getDiscordBanDisplayName(auditEntry.executor, auditEntry.executor.id)
+        : '',
+    });
+    await updateDiscordBanPanel(ban.guild, {
+      selectedUserId: ban.user.id,
+      page: 0,
+    });
+  } catch (error) {
+    console.log('Discord ban panel update on guildBanAdd failed:', error.message);
+  }
+});
+
+client.on('guildBanRemove', async (ban) => {
+  try {
+    await removeDiscordBanRecord(ban.guild.id, ban.user.id);
+    await updateDiscordBanPanel(ban.guild);
+  } catch (error) {
+    console.log('Discord ban panel update on guildBanRemove failed:', error.message);
+  }
 });
 
 // === helperi za reminder ===
@@ -4104,6 +4768,26 @@ if (interaction.commandName === 'update-field') {
   // ---------- KREIRANJE TIKETA (dropdown) ----------
   if (
     interaction.isStringSelectMenu() &&
+    interaction.customId.startsWith('ban_panel_select:')
+  ) {
+    if (!canManageDiscordBans(interaction.member)) {
+      return interaction.reply({
+        content: 'Nemas ovlast za pregled i upravljanje ban listom.',
+        ephemeral: true,
+      });
+    }
+
+    const [, pageRaw] = interaction.customId.split(':');
+    const payload = await createDiscordBanPanelPayload(interaction.guild, {
+      page: Number(pageRaw || 0),
+      selectedUserId: interaction.values[0],
+    });
+    await interaction.update(payload);
+    return;
+  }
+
+  if (
+    interaction.isStringSelectMenu() &&
     interaction.customId.startsWith('ticket_category')
   ) {
     await refreshSharedBotConfigFromMySql(true);
@@ -4573,6 +5257,63 @@ if (interaction.commandName === 'update-field') {
   // ---------- BUTTONI (TICKETI + FARMING) ----------
   if (interaction.isButton()) {
     if (await handlePollButton(interaction, client)) {
+      return;
+    }
+
+    if (interaction.customId.startsWith('ban_panel:')) {
+      if (!canManageDiscordBans(interaction.member)) {
+        return interaction.reply({
+          content: 'Nemas ovlast za upravljanje Discord banovima.',
+          ephemeral: true,
+        });
+      }
+
+      const [, action, pageRaw, selectedRaw] = interaction.customId.split(':');
+      const currentPage = Number(pageRaw || 0);
+      const selectedUserId = selectedRaw && selectedRaw !== 'none' ? selectedRaw : '';
+
+      if (action === 'unban') {
+        if (!selectedUserId) {
+          return interaction.reply({
+            content: 'Prvo odaberi korisnika kojeg zelis unbanati.',
+            ephemeral: true,
+          });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+          await interaction.guild.members.unban(
+            selectedUserId,
+            `Unban preko ban panela od ${interaction.user.tag}`
+          );
+          await removeDiscordBanRecord(interaction.guild.id, selectedUserId);
+          await updateDiscordBanPanel(interaction.guild, {
+            page: currentPage,
+          });
+          await interaction.editReply({
+            content: `Korisnik <@${selectedUserId}> je unbanan preko panela.`,
+          });
+        } catch (error) {
+          await interaction.editReply({
+            content: `Unban nije uspio: ${error.message}`,
+          });
+        }
+        return;
+      }
+
+      let nextPage = currentPage;
+      if (action === 'prev') {
+        nextPage -= 1;
+      } else if (action === 'next') {
+        nextPage += 1;
+      }
+
+      const payload = await createDiscordBanPanelPayload(interaction.guild, {
+        page: nextPage,
+        selectedUserId: action === 'refresh' ? selectedUserId : '',
+      });
+      await interaction.update(payload);
       return;
     }
 
