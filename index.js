@@ -1191,6 +1191,12 @@ function truncateText(value, maxLength) {
   return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
+function normalizeDiscordText(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function getDiscordBanDisplayName(user, fallbackId = '') {
   if (!user) {
     return fallbackId ? `Nepoznat korisnik (${fallbackId})` : 'Nepoznat korisnik';
@@ -1205,6 +1211,23 @@ function getDiscordBanDisplayName(user, fallbackId = '') {
   }
 
   return fallbackId ? `Nepoznat korisnik (${fallbackId})` : 'Nepoznat korisnik';
+}
+
+function getDiscordBanHandle(user, fallbackId = '') {
+  const username = normalizeDiscordText(user?.username || '');
+  if (username) return `@${username}`;
+  return fallbackId ? `ID ${fallbackId}` : 'Nepoznat korisnik';
+}
+
+function getDiscordBanSubtitle(user) {
+  const globalName = normalizeDiscordText(user?.globalName || '');
+  const username = normalizeDiscordText(user?.username || '');
+
+  if (globalName && username && globalName !== username) {
+    return globalName;
+  }
+
+  return '';
 }
 
 function formatDiscordBanTimestamp(value, style = 'f') {
@@ -1403,7 +1426,7 @@ async function getDiscordBanEntries(guild) {
     });
 }
 
-function buildDiscordBanPanelEmbed(entries, page, selectedUserId) {
+function buildDiscordBanPanelEmbed(guild, entries, page, selectedUserId) {
   const totalPages = Math.max(1, Math.ceil(entries.length / DISCORD_BAN_PANEL_PAGE_SIZE));
   const safePage = clampNumber(page, 0, totalPages - 1);
   const startIndex = safePage * DISCORD_BAN_PANEL_PAGE_SIZE;
@@ -1419,44 +1442,83 @@ function buildDiscordBanPanelEmbed(entries, page, selectedUserId) {
   const listValue = pageEntries.length
     ? pageEntries
         .map((entry, index) => {
-          const reason = entry.reason ? truncateText(entry.reason, 55) : 'Bez razloga';
-          return `\`${startIndex + index + 1}.\` ${truncateText(entry.displayName, 45)}\nRazlog: ${reason}`;
+          const listLabel = truncateText(getDiscordBanHandle(entry.user, entry.userId), 32);
+          const subtitle = getDiscordBanSubtitle(entry.user);
+          const reason = truncateText(
+            normalizeDiscordText(entry.reason || 'Bez upisanog razloga'),
+            65
+          );
+          return [
+            `**${String(startIndex + index + 1).padStart(2, '0')}** ${listLabel}`,
+            subtitle ? `*${truncateText(subtitle, 40)}*` : null,
+            `> ${reason}`,
+          ]
+            .filter(Boolean)
+            .join('\n');
         })
         .join('\n\n')
     : '_Trenutno nema banovanih clanova._';
 
   const embed = new EmbedBuilder()
-    .setColor(entries.length ? '#c0392b' : '#2ecc71')
-    .setTitle(DISCORD_BAN_PANEL_TITLE)
-    .setDescription(
-      'Ovaj panel se automatski osvjezava kad netko dobije ban ili unban.\n' +
-        'Odaberi korisnika iz izbornika ispod za detalje i brzi unban.'
-    )
-    .addFields({
-      name: `Banovani clanovi (${entries.length})`,
-      value: listValue,
+    .setColor(entries.length ? '#b03a2e' : '#2f855a')
+    .setAuthor({
+      name: `${guild?.name || 'Discord Server'} | Moderacija`,
+      iconURL: guild?.iconURL?.({ size: 256 }) || undefined,
     })
+    .setTitle('Ban Panel')
+    .setDescription(
+      'Live pregled Discord banova.\n' +
+        'Panel se sam osvjezava nakon restarta bota, bana i unbana.'
+    )
+    .addFields(
+      {
+        name: 'Ukupno banova',
+        value: `\`${entries.length}\``,
+        inline: true,
+      },
+      {
+        name: 'Stranica',
+        value: `\`${safePage + 1}/${totalPages}\``,
+        inline: true,
+      },
+      {
+        name: 'Odabrani korisnik',
+        value: selectedEntry
+          ? truncateText(getDiscordBanHandle(selectedEntry.user, selectedEntry.userId), 28)
+          : 'Nema odabira',
+        inline: true,
+      },
+      {
+        name: `Ban lista ${pageEntries.length ? `(${startIndex + 1}-${startIndex + pageEntries.length})` : ''}`.trim(),
+        value: listValue,
+      }
+    )
     .setFooter({
-      text: `Stranica ${safePage + 1}/${totalPages} | Panel prati Discord ban listu`,
+      text: 'Slavonska Ravnica | Live sync nakon restarta, bana i unbana',
     })
     .setTimestamp();
 
   if (selectedEntry) {
+    const detailHandle = getDiscordBanHandle(selectedEntry.user, selectedEntry.userId);
+    const detailSubtitle = getDiscordBanSubtitle(selectedEntry.user);
+
     embed.addFields({
       name: 'Detalji odabranog bana',
       value: [
-        `Korisnik: <@${selectedEntry.userId}>`,
-        `ID: \`${selectedEntry.userId}\``,
-        `Banan: ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'f')}`,
-        `Kada: ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'R')}`,
-        `Banao: ${selectedEntry.executorId ? `<@${selectedEntry.executorId}>` : (selectedEntry.executorTag || 'Nepoznato')}`,
-        `Razlog: ${truncateText(selectedEntry.reason || 'Nema unesenog razloga.', 700)}`,
+        `**Korisnik**  ${detailHandle}`,
+        detailSubtitle ? `**Prikazno ime**  ${truncateText(detailSubtitle, 60)}` : null,
+        `**ID**  \`${selectedEntry.userId}\``,
+        `**Ban od**  ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'f')}`,
+        `**Proslo**  ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'R')}`,
+        `**Moderator**  ${
+          selectedEntry.executorId
+            ? `<@${selectedEntry.executorId}>`
+            : truncateText(selectedEntry.executorTag || 'Nepoznato', 60)
+        }`,
+        '**Razlog**',
+        `> ${truncateText(normalizeDiscordText(selectedEntry.reason || 'Nema unesenog razloga.'), 500)}`,
       ].join('\n'),
     });
-
-    if (selectedEntry.user?.displayAvatarURL) {
-      embed.setThumbnail(selectedEntry.user.displayAvatarURL({ size: 256 }));
-    }
   }
 
   return {
@@ -1468,17 +1530,17 @@ function buildDiscordBanPanelEmbed(entries, page, selectedUserId) {
   };
 }
 
-function buildDiscordBanPanelComponents(entries, page, selectedUserId) {
-  const state = buildDiscordBanPanelEmbed(entries, page, selectedUserId);
+function buildDiscordBanPanelComponents(guild, entries, page, selectedUserId) {
+  const state = buildDiscordBanPanelEmbed(guild, entries, page, selectedUserId);
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`ban_panel:prev:${state.safePage}:${state.selectedUserId || 'none'}`)
-      .setLabel('Prethodna')
+      .setLabel('Nazad')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(state.safePage <= 0 || !entries.length),
     new ButtonBuilder()
       .setCustomId(`ban_panel:next:${state.safePage}:${state.selectedUserId || 'none'}`)
-      .setLabel('Sljedeca')
+      .setLabel('Naprijed')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(state.safePage >= state.totalPages - 1 || !entries.length),
     new ButtonBuilder()
@@ -1496,11 +1558,14 @@ function buildDiscordBanPanelComponents(entries, page, selectedUserId) {
   if (state.pageEntries.length) {
     const menu = new StringSelectMenuBuilder()
       .setCustomId(`ban_panel_select:${state.safePage}`)
-      .setPlaceholder('Odaberi banovanog clana za detalje')
+      .setPlaceholder('Odaberi korisnika za detalje i unban')
       .addOptions(
         state.pageEntries.map((entry) => ({
-          label: truncateText(entry.displayName, 100),
-          description: truncateText(entry.reason || 'Bez unesenog razloga', 100),
+          label: truncateText(getDiscordBanHandle(entry.user, entry.userId), 100),
+          description: truncateText(
+            normalizeDiscordText(entry.reason || 'Bez upisanog razloga'),
+            100
+          ),
           value: entry.userId,
           default: entry.userId === state.selectedUserId,
         }))
@@ -1520,6 +1585,7 @@ function buildDiscordBanPanelComponents(entries, page, selectedUserId) {
 async function createDiscordBanPanelPayload(guild, options = {}) {
   const entries = await getDiscordBanEntries(guild);
   return buildDiscordBanPanelComponents(
+    guild,
     entries,
     Number.isFinite(options.page) ? options.page : Number(options.page || 0),
     options.selectedUserId ? String(options.selectedUserId) : ''
