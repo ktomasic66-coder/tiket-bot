@@ -1487,6 +1487,9 @@ function buildDiscordBanPanelEmbed(guild, entries, page, selectedUserId) {
     menuStartIndex,
     menuStartIndex + DISCORD_BAN_PANEL_MENU_PAGE_SIZE
   );
+  const listRangeLabel = pageEntries.length
+    ? `${startIndex + 1}-${startIndex + pageEntries.length}`
+    : '0-0';
 
   const listValue = pageEntries.length
     ? pageEntries
@@ -1494,8 +1497,8 @@ function buildDiscordBanPanelEmbed(guild, entries, page, selectedUserId) {
           const listLabel = truncateText(getDiscordBanHandle(entry.user, entry.userId), 32);
           const subtitle = getDiscordBanSubtitle(entry.user);
           return [
-            `**${String(startIndex + index + 1).padStart(2, '0')}** ${listLabel}`,
-            subtitle ? `*${truncateText(subtitle, 40)}*` : null,
+            `**${String(startIndex + index + 1).padStart(2, '0')}. ${listLabel}**`,
+            subtitle ? `${truncateText(subtitle, 40)}` : null,
           ]
             .filter(Boolean)
             .join('\n');
@@ -1503,67 +1506,60 @@ function buildDiscordBanPanelEmbed(guild, entries, page, selectedUserId) {
         .join('\n\n')
     : '_Trenutno nema banovanih clanova._';
 
+  const detailHandle = selectedEntry
+    ? getDiscordBanHandle(selectedEntry.user, selectedEntry.userId)
+    : 'Nema odabira';
+  const detailSubtitle = selectedEntry ? getDiscordBanSubtitle(selectedEntry.user) : '';
+  const detailModerator = selectedEntry
+    ? selectedEntry.executorId
+      ? `<@${selectedEntry.executorId}>`
+      : truncateText(selectedEntry.executorTag || 'Nepoznato', 60)
+    : 'Nepoznato';
+  const detailReason = selectedEntry
+    ? truncateText(normalizeDiscordText(selectedEntry.reason || 'Nema unesenog razloga.'), 420)
+    : 'Odaberi korisnika iz dropdowna ispod kako bi se prikazali detalji bana.';
+
+  const descriptionParts = [
+    '```',
+    ' Upravljaj Discord banovima iz ovog panela',
+    '```',
+    '',
+    '**Sto mozes u panelu?**',
+    '',
+    `📋 **Ban Lista** - pregled ${pageEntries.length} korisnika na ovoj stranici`,
+    `📑 **Dropdown** - listanje svih banovanih i razlog po korisniku`,
+    `⛔ **Ban** - dodavanje novog bana direktno iz poruke`,
+    `✅ **Unban** - skidanje bana za odabranog korisnika`,
+    `🕒 **Live Sync** - automatski refresh nakon restarta, bana i unbana`,
+    '',
+    '────────────────────',
+    '',
+    `**Ban Lista (${listRangeLabel})**`,
+    '',
+    listValue,
+    '',
+    '────────────────────',
+    '',
+    '**Detalji Odabranog Bana**',
+    '',
+    `👤 **Korisnik:** ${detailHandle}`,
+    detailSubtitle ? `🪪 **Prikazno ime:** ${truncateText(detailSubtitle, 60)}` : null,
+    selectedEntry ? `🆔 **ID:** \`${selectedEntry.userId}\`` : null,
+    selectedEntry ? `📅 **Ban od:** ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'f')}` : null,
+    selectedEntry ? `⏱️ **Proslo:** ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'R')}` : null,
+    selectedEntry ? `🛡️ **Moderator:** ${detailModerator}` : null,
+    `📝 **Razlog:** ${detailReason}`,
+  ].filter(Boolean);
+
   const embed = new EmbedBuilder()
-    .setColor(entries.length ? '#b03a2e' : '#2f855a')
-    .setAuthor({
-      name: `${guild?.name || 'Discord Server'} | Moderacija`,
-      iconURL: guild?.iconURL?.({ size: 256 }) || undefined,
-    })
-    .setTitle('Ban Panel')
-    .setDescription(
-      'Live pregled Discord banova.\n' +
-        'Panel se sam osvjezava nakon restarta bota, bana i unbana.'
-    )
-    .addFields(
-      {
-        name: 'Ukupno banova',
-        value: `\`${entries.length}\``,
-        inline: true,
-      },
-      {
-        name: 'Stranica',
-        value: `\`${safePage + 1}/${totalPages}\``,
-        inline: true,
-      },
-      {
-        name: 'Odabrani korisnik',
-        value: selectedEntry
-          ? truncateText(getDiscordBanHandle(selectedEntry.user, selectedEntry.userId), 28)
-          : 'Nema odabira',
-        inline: true,
-      },
-      {
-        name: `Ban lista ${pageEntries.length ? `(${startIndex + 1}-${startIndex + pageEntries.length})` : ''}`.trim(),
-        value: listValue,
-      }
-    )
+    .setColor('#5865f2')
+    .setTitle('📊 Discord Ban Dashboard')
+    .setDescription(descriptionParts.join('\n'))
     .setFooter({
-      text: 'Slavonska Ravnica | Live sync nakon restarta, bana i unbana',
+      text: `Discord Ban Dashboard • ${guild?.name || 'Discord Server'} • Stranica ${safePage + 1}/${totalPages} • Ukupno ${entries.length}`,
+      iconURL: guild?.iconURL?.({ size: 128 }) || undefined,
     })
     .setTimestamp();
-
-  if (selectedEntry) {
-    const detailHandle = getDiscordBanHandle(selectedEntry.user, selectedEntry.userId);
-    const detailSubtitle = getDiscordBanSubtitle(selectedEntry.user);
-
-    embed.addFields({
-      name: 'Detalji odabranog bana',
-      value: [
-        `**Korisnik**  ${detailHandle}`,
-        detailSubtitle ? `**Prikazno ime**  ${truncateText(detailSubtitle, 60)}` : null,
-        `**ID**  \`${selectedEntry.userId}\``,
-        `**Ban od**  ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'f')}`,
-        `**Proslo**  ${formatDiscordBanTimestamp(selectedEntry.bannedAt, 'R')}`,
-        `**Moderator**  ${
-          selectedEntry.executorId
-            ? `<@${selectedEntry.executorId}>`
-            : truncateText(selectedEntry.executorTag || 'Nepoznato', 60)
-        }`,
-        '**Razlog**',
-        `> ${truncateText(normalizeDiscordText(selectedEntry.reason || 'Nema unesenog razloga.'), 500)}`,
-      ].join('\n'),
-    });
-  }
 
   return {
     embed,
