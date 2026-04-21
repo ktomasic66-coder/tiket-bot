@@ -126,7 +126,8 @@ const BLACKLIST_LOG_CHANNEL_ID = '1483576763811364935';
 const BLACKLIST_ROLE_ID = '1483578948611866714';
 const DISCORD_BAN_PANEL_CHANNEL_ID = '1487452042481106994';
 const DISCORD_BAN_PANEL_TITLE = 'Discord Ban Lista';
-const DISCORD_BAN_PANEL_PAGE_SIZE = 10;
+const DISCORD_BAN_PANEL_PAGE_SIZE = 5;
+const DISCORD_BAN_PANEL_MENU_PAGE_SIZE = 25;
 
 // =====================
 //  "DB" PREKO JSON FAJLA (za dashboard: welcome/logging/embeds/tickets)
@@ -1197,6 +1198,12 @@ function normalizeDiscordText(value) {
     .trim();
 }
 
+function extractDiscordUserId(value) {
+  const text = normalizeDiscordText(value);
+  const mentionMatch = text.match(/\d{17,20}/);
+  return mentionMatch ? mentionMatch[0] : '';
+}
+
 function getDiscordBanDisplayName(user, fallbackId = '') {
   if (!user) {
     return fallbackId ? `Nepoznat korisnik (${fallbackId})` : 'Nepoznat korisnik';
@@ -1234,6 +1241,39 @@ function formatDiscordBanTimestamp(value, style = 'f') {
   const timestamp = new Date(value || 0).getTime();
   if (!timestamp) return 'Nepoznato';
   return `<t:${Math.floor(timestamp / 1000)}:${style}>`;
+}
+
+function getDiscordBanPageForUser(entries, userId, fallbackPage = 0) {
+  const normalizedUserId = String(userId || '');
+  const selectedIndex = entries.findIndex((entry) => entry.userId === normalizedUserId);
+  if (selectedIndex === -1) return fallbackPage;
+  return Math.floor(selectedIndex / DISCORD_BAN_PANEL_PAGE_SIZE);
+}
+
+function buildDiscordBanModal(page = 0) {
+  const userInput = new TextInputBuilder()
+    .setCustomId('ban_target_user')
+    .setLabel('User ID ili mention')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('npr. 123456789012345678 ili <@123456789012345678>')
+    .setRequired(true)
+    .setMaxLength(40);
+
+  const reasonInput = new TextInputBuilder()
+    .setCustomId('ban_target_reason')
+    .setLabel('Razlog bana')
+    .setStyle(TextInputStyle.Paragraph)
+    .setPlaceholder('Upisi razlog bana...')
+    .setRequired(false)
+    .setMaxLength(500);
+
+  return new ModalBuilder()
+    .setCustomId(`ban_panel_ban_modal:${page}`)
+    .setTitle('Ban korisnika')
+    .addComponents(
+      new ActionRowBuilder().addComponents(userInput),
+      new ActionRowBuilder().addComponents(reasonInput)
+    );
 }
 
 function getDiscordBanPanelState() {
@@ -1438,20 +1478,24 @@ function buildDiscordBanPanelEmbed(guild, entries, page, selectedUserId) {
       : pageEntries.length
         ? pageEntries[0]
         : null;
+  const menuPage =
+    selectedIndex >= 0
+      ? Math.floor(selectedIndex / DISCORD_BAN_PANEL_MENU_PAGE_SIZE)
+      : Math.floor(startIndex / DISCORD_BAN_PANEL_MENU_PAGE_SIZE);
+  const menuStartIndex = menuPage * DISCORD_BAN_PANEL_MENU_PAGE_SIZE;
+  const menuEntries = entries.slice(
+    menuStartIndex,
+    menuStartIndex + DISCORD_BAN_PANEL_MENU_PAGE_SIZE
+  );
 
   const listValue = pageEntries.length
     ? pageEntries
         .map((entry, index) => {
           const listLabel = truncateText(getDiscordBanHandle(entry.user, entry.userId), 32);
           const subtitle = getDiscordBanSubtitle(entry.user);
-          const reason = truncateText(
-            normalizeDiscordText(entry.reason || 'Bez upisanog razloga'),
-            65
-          );
           return [
             `**${String(startIndex + index + 1).padStart(2, '0')}** ${listLabel}`,
             subtitle ? `*${truncateText(subtitle, 40)}*` : null,
-            `> ${reason}`,
           ]
             .filter(Boolean)
             .join('\n');
@@ -1524,6 +1568,8 @@ function buildDiscordBanPanelEmbed(guild, entries, page, selectedUserId) {
   return {
     embed,
     pageEntries,
+    menuEntries,
+    menuPage,
     safePage,
     selectedUserId: selectedEntry?.userId || '',
     totalPages,
@@ -1544,8 +1590,8 @@ function buildDiscordBanPanelComponents(guild, entries, page, selectedUserId) {
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(state.safePage >= state.totalPages - 1 || !entries.length),
     new ButtonBuilder()
-      .setCustomId(`ban_panel:refresh:${state.safePage}:${state.selectedUserId || 'none'}`)
-      .setLabel('Osvjezi')
+      .setCustomId(`ban_panel:ban:${state.safePage}:${state.selectedUserId || 'none'}`)
+      .setLabel('Ban')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId(`ban_panel:unban:${state.safePage}:${state.selectedUserId || 'none'}`)
@@ -1555,12 +1601,12 @@ function buildDiscordBanPanelComponents(guild, entries, page, selectedUserId) {
   );
   const components = [row];
 
-  if (state.pageEntries.length) {
+  if (state.menuEntries.length) {
     const menu = new StringSelectMenuBuilder()
-      .setCustomId(`ban_panel_select:${state.safePage}`)
+      .setCustomId(`ban_panel_select:${state.safePage}:${state.menuPage}`)
       .setPlaceholder('Odaberi korisnika za detalje i unban')
       .addOptions(
-        state.pageEntries.map((entry) => ({
+        state.menuEntries.map((entry) => ({
           label: truncateText(getDiscordBanHandle(entry.user, entry.userId), 100),
           description: truncateText(
             normalizeDiscordText(entry.reason || 'Bez upisanog razloga'),
@@ -1584,10 +1630,15 @@ function buildDiscordBanPanelComponents(guild, entries, page, selectedUserId) {
 
 async function createDiscordBanPanelPayload(guild, options = {}) {
   const entries = await getDiscordBanEntries(guild);
+  const requestedPage = Number.isFinite(options.page)
+    ? options.page
+    : options.selectedUserId
+      ? getDiscordBanPageForUser(entries, options.selectedUserId, 0)
+      : 0;
   return buildDiscordBanPanelComponents(
     guild,
     entries,
-    Number.isFinite(options.page) ? options.page : Number(options.page || 0),
+    requestedPage,
     options.selectedUserId ? String(options.selectedUserId) : ''
   );
 }
@@ -3626,7 +3677,6 @@ client.on('guildBanAdd', async (ban) => {
     });
     await updateDiscordBanPanel(ban.guild, {
       selectedUserId: ban.user.id,
-      page: 0,
     });
   } catch (error) {
     console.log('Discord ban panel update on guildBanAdd failed:', error.message);
@@ -4844,8 +4894,14 @@ if (interaction.commandName === 'update-field') {
     }
 
     const [, pageRaw] = interaction.customId.split(':');
+    const entries = await getDiscordBanEntries(interaction.guild);
+    const nextPage = getDiscordBanPageForUser(
+      entries,
+      interaction.values[0],
+      Number(pageRaw || 0)
+    );
     const payload = await createDiscordBanPanelPayload(interaction.guild, {
-      page: Number(pageRaw || 0),
+      page: nextPage,
       selectedUserId: interaction.values[0],
     });
     await interaction.update(payload);
@@ -5338,6 +5394,10 @@ if (interaction.commandName === 'update-field') {
       const currentPage = Number(pageRaw || 0);
       const selectedUserId = selectedRaw && selectedRaw !== 'none' ? selectedRaw : '';
 
+      if (action === 'ban') {
+        return interaction.showModal(buildDiscordBanModal(currentPage));
+      }
+
       if (action === 'unban') {
         if (!selectedUserId) {
           return interaction.reply({
@@ -5377,7 +5437,7 @@ if (interaction.commandName === 'update-field') {
 
       const payload = await createDiscordBanPanelPayload(interaction.guild, {
         page: nextPage,
-        selectedUserId: action === 'refresh' ? selectedUserId : '',
+        selectedUserId: '',
       });
       await interaction.update(payload);
       return;
@@ -6420,6 +6480,52 @@ if (!task.cropName) {
 
     if (await handlePollModal(interaction, client)) {
       return;
+    }
+
+    if (interaction.customId.startsWith('ban_panel_ban_modal:')) {
+      if (!canManageDiscordBans(interaction.member)) {
+        return interaction.reply({
+          content: 'Nemas ovlast za ban preko ovog panela.',
+          ephemeral: true,
+        });
+      }
+
+      const targetInput = interaction.fields.getTextInputValue('ban_target_user');
+      const reasonInput = normalizeDiscordText(
+        interaction.fields.getTextInputValue('ban_target_reason')
+      );
+      const targetUserId = extractDiscordUserId(targetInput);
+
+      if (!targetUserId) {
+        return interaction.reply({
+          content: 'Upisi ispravan Discord user ID ili mention.',
+          ephemeral: true,
+        });
+      }
+
+      const finalReason = reasonInput || `Ban preko ban panela od ${interaction.user.tag}`;
+
+      try {
+        await interaction.guild.members.ban(targetUserId, {
+          reason: finalReason,
+        });
+
+        await updateDiscordBanPanel(interaction.guild, {
+          selectedUserId: targetUserId,
+        });
+
+        return interaction.reply({
+          content:
+            `Korisnik <@${targetUserId}> je banan preko panela.` +
+            (reasonInput ? `\nRazlog: ${reasonInput}` : ''),
+          ephemeral: true,
+        });
+      } catch (error) {
+        return interaction.reply({
+          content: `Ban nije uspio: ${error.message}`,
+          ephemeral: true,
+        });
+      }
     }
 
     if (
