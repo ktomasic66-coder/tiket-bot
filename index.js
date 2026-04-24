@@ -230,12 +230,37 @@ const DEFAULT_TICKET_SYSTEM = {
 
 // 🔹 default polja za Farming zadatke (prebacujemo iz koda u db.json)
 const DEFAULT_FARMING_FIELDS = [];
+const KNOWN_FARM_KEYS = ['farm1', 'farm2', 'farm3'];
+const FARM_LABELS = {
+  farm1: 'Farma 1',
+  farm2: 'Farma 2',
+  farm3: 'Farma 3',
+};
+const TASK_PANEL_COMMAND_TO_FARM = {
+  task1: 'farm1',
+  task2: 'farm2',
+  task3: 'farm3',
+};
+
+function buildFarmState(factory) {
+  return KNOWN_FARM_KEYS.reduce((acc, farmKey) => {
+    acc[farmKey] = factory(farmKey);
+    return acc;
+  }, {});
+}
+
+function buildDefaultFarmingFields() {
+  return buildFarmState((farmKey) =>
+    farmKey === 'farm1' ? [...DEFAULT_FARMING_FIELDS] : []
+  );
+}
 
 // default sezonski podaci za sjetvu
 const DEFAULT_SOWING_SEASONS = [];
 const SOWING_TABLE_CHANNEL_IDS = {
   farm1: '1494813331842662511',
   farm2: '1494807191113433229',
+  farm3: '1496980804713320581',
 };
 const SOWING_TABLE_CHANNEL_ID = SOWING_TABLE_CHANNEL_IDS.farm2;
 const DEFAULT_SOWING_TABLE = {
@@ -243,16 +268,18 @@ const DEFAULT_SOWING_TABLE = {
   yearLabels: ['1 GOD', '2 GOD', '3 GOD', '4 GOD'],
   rows: [],
 };
-const DEFAULT_SOWING_TABLES = {
-  farm1: {
-    ...DEFAULT_SOWING_TABLE,
-    channelId: SOWING_TABLE_CHANNEL_IDS.farm1,
-  },
-  farm2: {
-    ...DEFAULT_SOWING_TABLE,
-    channelId: SOWING_TABLE_CHANNEL_IDS.farm2,
-  },
-};
+function buildDefaultSowingTable(channelId = '') {
+  return {
+    messageId: null,
+    channelId: String(channelId || '').trim(),
+    yearLabels: [...DEFAULT_SOWING_TABLE.yearLabels],
+    rows: [],
+  };
+}
+
+const DEFAULT_SOWING_TABLES = buildFarmState((farmKey) =>
+  buildDefaultSowingTable(SOWING_TABLE_CHANNEL_IDS[farmKey])
+);
 
 
 function getDefaultData() {
@@ -276,14 +303,8 @@ function getDefaultData() {
     ticketSystem: JSON.parse(JSON.stringify(DEFAULT_TICKET_SYSTEM)),
     // 🔹 ovdje ćemo spremati aktivne/završene FS zadatke (da ih možemo naći po polju)
     farmingTasks: [],
-    farmingTaskPanelMessageIds: {
-      farm1: null,
-      farm2: null,
-    },
-    farmingFields: {
-      farm1: [...DEFAULT_FARMING_FIELDS],
-      farm2: [],
-    },
+    farmingTaskPanelMessageIds: buildFarmState(() => null),
+    farmingFields: buildDefaultFarmingFields(),
     farmingFieldListMessageId: null,
     sowingSeasons: [...DEFAULT_SOWING_SEASONS],   // ✅ OVO NEDOSTAJE
     sowingTables: JSON.parse(JSON.stringify(DEFAULT_SOWING_TABLES)),
@@ -449,7 +470,7 @@ async function readFarmingFieldsFromMySql() {
 
   if (!rows.length) return null;
 
-  const grouped = { farm1: [], farm2: [] };
+  const grouped = buildFarmState(() => []);
   for (const row of rows) {
     const farmKey = String(row.farm_key || '').trim();
     if (!grouped[farmKey]) grouped[farmKey] = [];
@@ -503,7 +524,7 @@ async function readSowingTableRowsFromMySql() {
 
   if (!rows.length) return null;
 
-  const grouped = { farm1: [], farm2: [] };
+  const grouped = buildFarmState(() => []);
   for (const row of rows) {
     const farmKey = String(row.farm_key || '').trim();
     if (!grouped[farmKey]) grouped[farmKey] = [];
@@ -516,10 +537,7 @@ async function readSowingTableRowsFromMySql() {
     });
   }
 
-  return {
-    farm1: normalizeSowingTableRows(grouped.farm1),
-    farm2: normalizeSowingTableRows(grouped.farm2),
-  };
+  return buildFarmState((farmKey) => normalizeSowingTableRows(grouped[farmKey]));
 }
 
 async function persistSowingTableRowsToMySql(rowsByFarm) {
@@ -930,22 +948,9 @@ async function initMySql() {
     }
     const sqlSowingTableRows = await readSowingTableRowsFromMySql();
     if (sqlSowingTableRows) {
-      dbCache = mergeDbData({
-        ...dbCache,
-        sowingTables: {
-          ...(dbCache.sowingTables || {}),
-          farm1: {
-            ...((dbCache.sowingTables || {}).farm1 || {}),
-            rows: sqlSowingTableRows.farm1 || [],
-          },
-          farm2: {
-            ...((dbCache.sowingTables || {}).farm2 || {}),
-            rows: sqlSowingTableRows.farm2 || [],
-          },
-        },
-      });
+      dbCache = mergeSowingTableRowsIntoData(dbCache, sqlSowingTableRows);
       fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
-    } else if ((dbCache.sowingTables?.farm1?.rows?.length || 0) + (dbCache.sowingTables?.farm2?.rows?.length || 0) > 0) {
+    } else if (getTotalSowingTableRowCount(dbCache.sowingTables) > 0) {
       await persistSowingTableRowsToMySql(dbCache.sowingTables);
     }
     await migrateLegacyTicketBlacklist();
@@ -992,20 +997,7 @@ async function initMySql() {
       readSowingTableRowsFromMySql()
         .then((rows) => {
           if (!rows) return;
-          dbCache = mergeDbData({
-            ...dbCache,
-            sowingTables: {
-              ...(dbCache.sowingTables || {}),
-              farm1: {
-                ...((dbCache.sowingTables || {}).farm1 || {}),
-                rows: rows.farm1 || [],
-              },
-              farm2: {
-                ...((dbCache.sowingTables || {}).farm2 || {}),
-                rows: rows.farm2 || [],
-              },
-            },
-          });
+          dbCache = mergeSowingTableRowsIntoData(dbCache, rows);
           fs.writeFileSync(dbFile, JSON.stringify(dbCache, null, 2));
         })
         .catch(() => {});
@@ -1807,26 +1799,23 @@ function normalizeSowingTables(rawTables) {
 
   if (!rawTables || typeof rawTables !== 'object' || Array.isArray(rawTables)) {
     // Backward compatibility: old single table becomes Farma 2 table.
-    return {
-      farm1: normalizeSowingTable(base.farm1),
-      farm2: normalizeSowingTable({
-        ...base.farm2,
-        ...(rawTables && typeof rawTables === 'object' ? rawTables : {}),
-      }),
-    };
+    return buildFarmState((farmKey) =>
+      normalizeSowingTable({
+        ...(base[farmKey] || buildDefaultSowingTable()),
+        ...(farmKey === 'farm2' && rawTables && typeof rawTables === 'object' ? rawTables : {}),
+      })
+    );
   }
 
-  return {
-    farm1: normalizeSowingTable({
-      ...base.farm1,
-      ...(rawTables.farm1 || {}),
-    }),
-    farm2: normalizeSowingTable({
-      ...base.farm2,
-      ...(rawTables.farm2 || {}),
-      ...(!rawTables.farm1 && !rawTables.farm2 ? rawTables : {}),
-    }),
-  };
+  const hasFarmEntries = KNOWN_FARM_KEYS.some((farmKey) => rawTables[farmKey]);
+
+  return buildFarmState((farmKey) =>
+    normalizeSowingTable({
+      ...(base[farmKey] || buildDefaultSowingTable()),
+      ...(rawTables[farmKey] || {}),
+      ...(!hasFarmEntries && farmKey === 'farm2' ? rawTables : {}),
+    })
+  );
 }
 
 function normalizeFarmingFields(rawFields) {
@@ -1834,23 +1823,50 @@ function normalizeFarmingFields(rawFields) {
     sortFarmingFieldLabels(Array.from(new Set((list || []).map(String))));
 
   if (Array.isArray(rawFields)) {
-    return {
-      farm1: uniqueStrings(rawFields.length ? rawFields : DEFAULT_FARMING_FIELDS),
-      farm2: [],
-    };
+    return buildFarmState((farmKey) =>
+      farmKey === 'farm1'
+        ? uniqueStrings(rawFields.length ? rawFields : DEFAULT_FARMING_FIELDS)
+        : []
+    );
   }
 
   if (rawFields && typeof rawFields === 'object') {
-    return {
-      farm1: uniqueStrings(rawFields.farm1),
-      farm2: uniqueStrings(rawFields.farm2),
-    };
+    return buildFarmState((farmKey) =>
+      uniqueStrings(
+        Object.prototype.hasOwnProperty.call(rawFields, farmKey)
+          ? rawFields[farmKey]
+          : farmKey === 'farm1'
+            ? DEFAULT_FARMING_FIELDS
+            : []
+      )
+    );
   }
 
-  return {
-    farm1: [...DEFAULT_FARMING_FIELDS],
-    farm2: [],
-  };
+  return buildDefaultFarmingFields();
+}
+
+function getTotalSowingTableRowCount(tables) {
+  const normalizedTables = normalizeSowingTables(tables);
+  return KNOWN_FARM_KEYS.reduce(
+    (sum, farmKey) => sum + (normalizedTables[farmKey]?.rows?.length || 0),
+    0
+  );
+}
+
+function mergeSowingTableRowsIntoData(baseData, rowsByFarm) {
+  const nextTables = normalizeSowingTables(baseData.sowingTables || baseData.sowingTable);
+
+  for (const farmKey of KNOWN_FARM_KEYS) {
+    nextTables[farmKey] = normalizeSowingTable({
+      ...(nextTables[farmKey] || DEFAULT_SOWING_TABLES[farmKey] || DEFAULT_SOWING_TABLE),
+      rows: rowsByFarm[farmKey] || [],
+    });
+  }
+
+  return mergeDbData({
+    ...baseData,
+    sowingTables: nextTables,
+  });
 }
 
 // helper: vraća listu polja za Farming zadatke
@@ -1926,13 +1942,14 @@ function buildFarmingFieldPanelEmbed() {
   const allFields = getAllFarmingFields();
   const farm1Fields = allFields.farm1 || [];
   const farm2Fields = allFields.farm2 || [];
+  const farm3Fields = allFields.farm3 || [];
   const emptyValue = '\u200B';
 
   const embed = new EmbedBuilder()
     .setColor('#3ba55d')
     .setTitle('🧑‍🌾 Upravljanje poljima')
     .setDescription(
-      'Ovdje možeš dodavati i uređivati polja za obje farme.\n\n' +
+      'Ovdje možeš dodavati i uređivati polja za sve farme.\n\n' +
       'Prvo odaberi radnju, a zatim će bot pitati za koju farmu radiš promjenu.'
     )
     .addFields(
@@ -1944,6 +1961,11 @@ function buildFarmingFieldPanelEmbed() {
       {
         name: 'Farma 2',
         value: farm2Fields.length ? farm2Fields.map((field) => `- ${field}`).join('\n') : emptyValue,
+        inline: true,
+      },
+      {
+        name: 'Farma 3',
+        value: farm3Fields.length ? farm3Fields.map((field) => `- ${field}`).join('\n') : emptyValue,
         inline: true,
       }
     )
@@ -3170,8 +3192,7 @@ async function updateFarmingTaskPanel(guild, farmKey) {
 
   const data = loadDb();
   const panelIds = {
-    farm1: null,
-    farm2: null,
+    ...buildFarmState(() => null),
     ...(data.farmingTaskPanelMessageIds || {}),
   };
   const tasks = getOpenFieldTasks(farm.key)
@@ -3411,20 +3432,83 @@ const FARM_FIELD_PANEL_CHANNEL_ID = '1488997083481636905';
 const FARM_CONFIGS = {
   farm1: {
     key: 'farm1',
-    label: 'Farma 1',
+    label: FARM_LABELS.farm1,
     jobChannelId: '1488991604718043359',
     doneChannelId: '1488991718798917823',
   },
   farm2: {
     key: 'farm2',
-    label: 'Farma 2',
+    label: FARM_LABELS.farm2,
     jobChannelId: '1488991802177486939',
     doneChannelId: '1488991841834766356',
+  },
+  farm3: {
+    key: 'farm3',
+    label: FARM_LABELS.farm3,
+    jobChannelId: '1496980500961820843',
+    doneChannelId: '1496980713969422508',
   },
 };
 
 function getFarmConfig(farmKey) {
   return FARM_CONFIGS[farmKey] || FARM_CONFIGS.farm1;
+}
+
+function getTaskCommandFarmKey(commandName) {
+  return TASK_PANEL_COMMAND_TO_FARM[String(commandName || '').trim()] || null;
+}
+
+function getFarmKeyFromCustomId(customId, prefix) {
+  if (typeof customId !== 'string' || !customId.startsWith(prefix)) return null;
+
+  const farmKey = customId.slice(prefix.length);
+  return KNOWN_FARM_KEYS.includes(farmKey) ? farmKey : null;
+}
+
+function buildFarmChoiceRows(prefix, labelBuilder, style) {
+  const rows = [];
+
+  for (let i = 0; i < KNOWN_FARM_KEYS.length; i += 5) {
+    const buttons = KNOWN_FARM_KEYS.slice(i, i + 5).map((farmKey) => {
+      const farm = getFarmConfig(farmKey);
+      return new ButtonBuilder()
+        .setCustomId(`${prefix}${farmKey}`)
+        .setLabel(labelBuilder(farm))
+        .setStyle(style);
+    });
+
+    rows.push(new ActionRowBuilder().addComponents(...buttons));
+  }
+
+  return rows;
+}
+
+function buildFieldActionChoiceRows(action) {
+  if (action === 'add') {
+    return buildFarmChoiceRows(
+      'field_add_button_',
+      (farm) => `Dodaj u ${farm.label}`,
+      ButtonStyle.Success
+    );
+  }
+
+  if (action === 'update') {
+    return buildFarmChoiceRows(
+      'field_update_button_',
+      (farm) => `Uredi ${farm.label}`,
+      ButtonStyle.Primary
+    );
+  }
+
+  if (action === 'remove') {
+    return buildFarmChoiceRows(
+      'field_remove_button_',
+      (farm) => `Briši iz ${farm.label}`,
+      ButtonStyle.Danger
+    );
+  }
+
+  return [];
 }
 
 function resolveFarmConfig(taskLike = {}) {
@@ -3639,10 +3723,12 @@ client.once('ready', async () => {
       await refreshSharedBotConfigFromMySql(true);
       await updateSeasonEmbed(guild);
       await updateFarmingFieldsEmbed(guild);
-      await updateFarmingTaskPanel(guild, 'farm1');
-      await updateFarmingTaskPanel(guild, 'farm2');
-      await updateSowingTableMessage(guild, 'farm1');
-      await updateSowingTableMessage(guild, 'farm2');
+      for (const farmKey of KNOWN_FARM_KEYS) {
+        await updateFarmingTaskPanel(guild, farmKey);
+      }
+      for (const farmKey of KNOWN_FARM_KEYS) {
+        await updateSowingTableMessage(guild, farmKey);
+      }
       await updateDiscordBanPanel(guild);
       console.log("🌾 Sezona Sjetve — embed obnovljen pri startu bota.");
     }
@@ -4561,13 +4647,13 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    if (interaction.commandName === 'task1' || interaction.commandName === 'task2') {
-      const farmKey = interaction.commandName === 'task2' ? 'farm2' : 'farm1';
+    const taskPanelFarmKey = getTaskCommandFarmKey(interaction.commandName);
+    if (taskPanelFarmKey) {
       await interaction.deferReply({ ephemeral: true });
       await refreshSharedBotConfigFromMySql(true);
-      await updateFarmingTaskPanel(interaction.guild, farmKey);
+      await updateFarmingTaskPanel(interaction.guild, taskPanelFarmKey);
       await interaction.editReply({
-        content: `✅ Panel za ${getFarmConfig(farmKey).label} je osvježen.`,
+        content: `✅ Panel za ${getFarmConfig(taskPanelFarmKey).label} je osvježen.`,
       });
       return;
     }
@@ -4611,20 +4697,9 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
           ephemeral: true,
         });
       }
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('field_add_button_farm1')
-          .setLabel('Dodaj u Farmu 1')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('field_add_button_farm2')
-          .setLabel('Dodaj u Farmu 2')
-          .setStyle(ButtonStyle.Success)
-      );
-
       return interaction.reply({
         content: 'Odaberi za koju farmu želiš dodati novo polje.',
-        components: [row],
+        components: buildFieldActionChoiceRows('add'),
         ephemeral: true,
       });
     }
@@ -4637,20 +4712,9 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
           ephemeral: true,
         });
       }
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('field_remove_button_farm1')
-          .setLabel('Briši iz Farme 1')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId('field_remove_button_farm2')
-          .setLabel('Briši iz Farme 2')
-          .setStyle(ButtonStyle.Danger)
-      );
-
       return interaction.reply({
         content: 'Odaberi za koju farmu želiš obrisati polje.',
-        components: [row],
+        components: buildFieldActionChoiceRows('remove'),
         ephemeral: true,
       });
     }
@@ -4710,19 +4774,18 @@ if (interaction.commandName === 'task1' || interaction.commandName === 'task2') 
         });
       }
 
-      saveSowingTableState('farm1', {
-        ...getSowingTableState('farm1'),
-        channelId: SOWING_TABLE_CHANNEL_IDS.farm1,
-      });
-      saveSowingTableState('farm2', {
-        ...getSowingTableState('farm2'),
-        channelId: SOWING_TABLE_CHANNEL_IDS.farm2,
-      });
+      for (const farmKey of KNOWN_FARM_KEYS) {
+        saveSowingTableState(farmKey, {
+          ...getSowingTableState(farmKey),
+          channelId: SOWING_TABLE_CHANNEL_IDS[farmKey],
+        });
+      }
 
-      await updateSowingTableMessage(interaction.guild, 'farm1');
-      await updateSowingTableMessage(interaction.guild, 'farm2');
+      for (const farmKey of KNOWN_FARM_KEYS) {
+        await updateSowingTableMessage(interaction.guild, farmKey);
+      }
       await interaction.reply({
-        content: `✅ Tablice sjetve su postavljene ili osvježene u kanalima <#${SOWING_TABLE_CHANNEL_IDS.farm1}> i <#${SOWING_TABLE_CHANNEL_IDS.farm2}>.`,
+        content: `✅ Tablice sjetve su postavljene ili osvježene u kanalima ${KNOWN_FARM_KEYS.map((farmKey) => `<#${SOWING_TABLE_CHANNEL_IDS[farmKey]}>`).join(', ')}.`,
         ephemeral: true,
       });
       scheduleInteractionReplyDeletion(interaction, 2000);
@@ -4868,7 +4931,7 @@ if (interaction.commandName === 'update-field') {
 
   return interaction.reply({
     content: 'Odaberi za koju farmu želiš urediti polje.',
-    components: [row],
+    components: buildFieldActionChoiceRows('update'),
     ephemeral: true,
   });
 
@@ -5557,12 +5620,11 @@ if (interaction.commandName === 'update-field') {
       }
     }
 
-    if (interaction.commandName === 'task1' || interaction.commandName === 'task2') {
-      const farmKey = interaction.commandName === 'task2' ? 'farm2' : 'farm1';
+    if (taskPanelFarmKey) {
       await interaction.deferReply({ ephemeral: true });
-      await updateFarmingTaskPanel(interaction.guild, farmKey);
+      await updateFarmingTaskPanel(interaction.guild, taskPanelFarmKey);
       await interaction.editReply({
-        content: `✅ Panel za ${getFarmConfig(farmKey).label} je osvježen.`,
+        content: `✅ Panel za ${getFarmConfig(taskPanelFarmKey).label} je osvježen.`,
       });
       return;
     }
@@ -5618,7 +5680,7 @@ if (interaction.commandName === 'update-field') {
 
       return interaction.reply({
         content: 'Za koju farmu želiš dodati polje?',
-        components: [row],
+        components: buildFieldActionChoiceRows('add'),
         ephemeral: true,
       });
     }
@@ -5637,7 +5699,7 @@ if (interaction.commandName === 'update-field') {
 
       return interaction.reply({
         content: 'Za koju farmu želiš urediti polje?',
-        components: [row],
+        components: buildFieldActionChoiceRows('update'),
         ephemeral: true,
       });
     }
@@ -5656,16 +5718,14 @@ if (interaction.commandName === 'update-field') {
 
       return interaction.reply({
         content: 'Za koju farmu želiš obrisati polje?',
-        components: [row],
+        components: buildFieldActionChoiceRows('remove'),
         ephemeral: true,
       });
     }
 
     // === FARMING: dugme za dodavanje polja (iz field-panel poruke) ===
-    if (
-      interaction.customId === 'field_add_button_farm1' ||
-      interaction.customId === 'field_add_button_farm2'
-    ) {
+    const fieldAddFarmKey = getFarmKeyFromCustomId(interaction.customId, 'field_add_button_');
+    if (fieldAddFarmKey) {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
           content: '⛔ Samo staff/admin može dodavati polja.',
@@ -5673,8 +5733,7 @@ if (interaction.commandName === 'update-field') {
         });
       }
 
-      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
-      const farm = getFarmConfig(farmKey);
+      const farm = getFarmConfig(fieldAddFarmKey);
 
       const modal = new ModalBuilder()
         .setCustomId(`field_add_modal_${farm.key}`)
@@ -5694,10 +5753,8 @@ if (interaction.commandName === 'update-field') {
       return;
     }
 
-    if (
-      interaction.customId === 'field_update_button_farm1' ||
-      interaction.customId === 'field_update_button_farm2'
-    ) {
+    const fieldUpdateFarmKey = getFarmKeyFromCustomId(interaction.customId, 'field_update_button_');
+    if (fieldUpdateFarmKey) {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
           content: '⛔ Samo staff može uređivati polja.',
@@ -5705,8 +5762,7 @@ if (interaction.commandName === 'update-field') {
         });
       }
 
-      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
-      const farm = getFarmConfig(farmKey);
+      const farm = getFarmConfig(fieldUpdateFarmKey);
       const modal = new ModalBuilder()
         .setCustomId(`update_field_modal_${farm.key}`)
         .setTitle(`Uredi polje - ${farm.label}`);
@@ -5730,10 +5786,8 @@ if (interaction.commandName === 'update-field') {
       return interaction.showModal(modal);
     }
 
-    if (
-      interaction.customId === 'field_remove_button_farm1' ||
-      interaction.customId === 'field_remove_button_farm2'
-    ) {
+    const fieldRemoveFarmKey = getFarmKeyFromCustomId(interaction.customId, 'field_remove_button_');
+    if (fieldRemoveFarmKey) {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
           content: '⛔ Samo staff/admin može brisati polja.',
@@ -5741,8 +5795,7 @@ if (interaction.commandName === 'update-field') {
         });
       }
 
-      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
-      const farm = getFarmConfig(farmKey);
+      const farm = getFarmConfig(fieldRemoveFarmKey);
       const modal = new ModalBuilder()
         .setCustomId(`field_remove_modal_${farm.key}`)
         .setTitle(`Brisanje polja – ${farm.label}`);
@@ -5758,8 +5811,9 @@ if (interaction.commandName === 'update-field') {
     }
 
     // === FARMING: START KREIRANJA POSLA === 
-if (interaction.customId === 'task_start_farm1' || interaction.customId === 'task_start_farm2') {
-  const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
+const taskStartFarmKey = getFarmKeyFromCustomId(interaction.customId, 'task_start_');
+if (taskStartFarmKey) {
+  const farmKey = taskStartFarmKey;
   const farm = getFarmConfig(farmKey);
   activeTasks.set(interaction.user.id, { field: null, farmKey: farm.key });
 
@@ -5782,10 +5836,9 @@ if (interaction.customId === 'task_start_farm1' || interaction.customId === 'tas
 
 // === OPĆI ZADATAK: START (BEZ POLJA) ===
 if (
-  interaction.customId === 'task_general_start_farm1' ||
-  interaction.customId === 'task_general_start_farm2'
+  getFarmKeyFromCustomId(interaction.customId, 'task_general_start_')
 ) {
-  const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
+  const farmKey = getFarmKeyFromCustomId(interaction.customId, 'task_general_start_');
   const farm = getFarmConfig(farmKey);
   const modal = new ModalBuilder()
     .setCustomId(`task_general_modal_${farm.key}`)
@@ -6774,10 +6827,8 @@ if (!task.cropName) {
     }
 
     // Dodavanje novog polja
-    if (
-      interaction.customId === 'field_add_modal_farm1' ||
-      interaction.customId === 'field_add_modal_farm2'
-    ) {
+    const fieldAddModalFarmKey = getFarmKeyFromCustomId(interaction.customId, 'field_add_modal_');
+    if (fieldAddModalFarmKey) {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
           content: '⛔ Samo staff/admin može dodavati polja.',
@@ -6785,8 +6836,7 @@ if (!task.cropName) {
         });
       }
 
-      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
-      const farm = getFarmConfig(farmKey);
+      const farm = getFarmConfig(fieldAddModalFarmKey);
       const value = interaction.fields.getTextInputValue('field_value').trim();
 
       if (!value) {
@@ -6814,10 +6864,8 @@ if (!task.cropName) {
       });
     }
 
-    if (
-      interaction.customId === 'field_remove_modal_farm1' ||
-      interaction.customId === 'field_remove_modal_farm2'
-    ) {
+    const fieldRemoveModalFarmKey = getFarmKeyFromCustomId(interaction.customId, 'field_remove_modal_');
+    if (fieldRemoveModalFarmKey) {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         return interaction.reply({
           content: '⛔ Samo staff/admin može brisati polja.',
@@ -6825,8 +6873,7 @@ if (!task.cropName) {
         });
       }
 
-      const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
-      const farm = getFarmConfig(farmKey);
+      const farm = getFarmConfig(fieldRemoveModalFarmKey);
       const value = interaction.fields.getTextInputValue('field_value').trim();
       const fields = getFarmingFields(farm.key);
       const index = fields.indexOf(value);
@@ -6850,13 +6897,12 @@ if (!task.cropName) {
 
     // 📝 OPĆI ZADATAK – MODAL SUBMIT → PRIORITET
 if (
-  interaction.customId === 'task_general_modal_farm1' ||
-  interaction.customId === 'task_general_modal_farm2'
+  getFarmKeyFromCustomId(interaction.customId, 'task_general_modal_')
 ) {
   const title = interaction.fields.getTextInputValue('task_title');
   const description =
     interaction.fields.getTextInputValue('task_description') || '';
-  const farmKey = interaction.customId.endsWith('farm2') ? 'farm2' : 'farm1';
+  const farmKey = getFarmKeyFromCustomId(interaction.customId, 'task_general_modal_');
 
   activeTasks.set(interaction.user.id, {
     type: 'general',
@@ -6967,10 +7013,9 @@ if (
 
     // === UPDATE FIELD – STEP 2 (kompletan rename sistema) ===
 if (
-    interaction.customId === "update_field_modal_farm1" ||
-    interaction.customId === "update_field_modal_farm2"
+    getFarmKeyFromCustomId(interaction.customId, 'update_field_modal_')
 ) {
-    const farmKey = interaction.customId.endsWith("farm2") ? "farm2" : "farm1";
+    const farmKey = getFarmKeyFromCustomId(interaction.customId, 'update_field_modal_');
     const farm = getFarmConfig(farmKey);
     const oldField = interaction.fields.getTextInputValue("old_field").trim();
     const newField = interaction.fields.getTextInputValue("new_field").trim();

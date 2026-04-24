@@ -7,7 +7,8 @@ const addFarmOption = (option) =>
     .setRequired(true)
     .addChoices(
       { name: 'Farma 1', value: 'farm1' },
-      { name: 'Farma 2', value: 'farm2' }
+      { name: 'Farma 2', value: 'farm2' },
+      { name: 'Farma 3', value: 'farm3' }
     );
 
 const commands = [
@@ -22,6 +23,10 @@ const commands = [
   new SlashCommandBuilder()
     .setName('task2')
     .setDescription('Postavi Farming Simulator 25 panel za Farmu 2 u ovaj kanal.'),
+
+  new SlashCommandBuilder()
+    .setName('task3')
+    .setDescription('Postavi Farming Simulator 25 panel za Farmu 3 u ovaj kanal.'),
 
   new SlashCommandBuilder()
     .setName('anketa')
