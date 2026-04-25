@@ -5620,15 +5620,6 @@ if (interaction.commandName === 'update-field') {
       }
     }
 
-    if (taskPanelFarmKey) {
-      await interaction.deferReply({ ephemeral: true });
-      await updateFarmingTaskPanel(interaction.guild, taskPanelFarmKey);
-      await interaction.editReply({
-        content: `✅ Panel za ${getFarmConfig(taskPanelFarmKey).label} je osvježen.`,
-      });
-      return;
-    }
-
     if (interaction.customId === 'task_finish_open') {
       const farm = getFarmConfig(
         Object.values(FARM_CONFIGS).find((entry) => entry.jobChannelId === interaction.channelId)?.key || 'farm1'
